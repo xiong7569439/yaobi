@@ -37,6 +37,14 @@ function addAlerts(newAlerts) {
   for (const a of newAlerts) {
     a.id = `${a.symbol}-${now}-${Math.random().toString(36).slice(2, 6)}`;
     a.createdAt = now;
+    // 同一 symbol 只保留最新一条
+    const existIdx = existing.findIndex(e => e.symbol === a.symbol);
+    if (existIdx >= 0) {
+      a.firstSeenAt = existing[existIdx].firstSeenAt || existing[existIdx].createdAt;
+      existing.splice(existIdx, 1);
+    } else {
+      a.firstSeenAt = now;
+    }
   }
   const merged = [...newAlerts, ...existing].slice(0, 200);
   writeJSON(ALERTS_FILE, merged);
