@@ -139,7 +139,26 @@ async function getSentimentRank() {
   } catch (e) { console.error('[OKX-HTTP] getSentimentRank error:', e.message); return null; }
 }
 
-// ===== OI 数据 (公开端点, 无需认证) =====
+// ===== OI + 合约数据 (公开端点, 无需认证) =====
+
+const fs = require('fs');
+const path = require('path');
+const OI_CACHE_FILE = '/tmp/oi-prev.json';
+
+function loadPrevOi() {
+  try {
+    if (fs.existsSync(OI_CACHE_FILE)) {
+      return JSON.parse(fs.readFileSync(OI_CACHE_FILE, 'utf-8'));
+    }
+  } catch {}
+  return {};
+}
+
+function saveCurrOi(oiMap) {
+  try {
+    fs.writeFileSync(OI_CACHE_FILE, JSON.stringify(oiMap));
+  } catch {}
+}
 
 async function getOiChanges() {
   try {
@@ -148,15 +167,107 @@ async function getOiChanges() {
   } catch { return null; }
 }
 
+/**
+ * 构建合约变化数据 — 合并 OI快照 + SWAP Tickers + 上次OI快照计算变化率
+ * 返回格式与本地 CLI 的 market oi-change 对齐:
+ * [{ instId, oiDeltaPct, fundingRate, pxChgPct, last, volUsd24h }]
+ */
+async function buildContractData() {
+  // 并行获取 OI 快照 + SWAP 行情
+  const [oiRes, swapRes] = await Promise.allSettled([
+    getOiChanges(),
+    getSwapTickers(),
+  ]);
+
+  const oiList = oiRes.status === 'fulfilled' ? oiRes.value : null;
+  const swapTickers = swapRes.status === 'fulfilled' ? swapRes.value : null;
+
+  if (!oiList && !swapTickers) return null;
+
+  // 加载上次 OI 快照用于计算变化
+  const prevOi = loadPrevOi();
+  const currOiMap = {};
+
+  // 构建 OI map: instId -> oi value
+  const oiMap = {};
+  if (Array.isArray(oiList)) {
+    for (const item of oiList) {
+      const instId = item.instId;
+      const oi = parseFloat(item.oi || 0);
+      oiMap[instId] = oi;
+      currOiMap[instId] = oi;
+    }
+  }
+
+  // 构建 SWAP ticker map: instId -> ticker data
+  const swapMap = {};
+  if (Array.isArray(swapTickers)) {
+    for (const t of swapTickers) {
+      swapMap[t.instId] = t;
+    }
+  }
+
+  // 合并构建 oiChanges 数组
+  const allInstIds = new Set([...Object.keys(oiMap), ...Object.keys(swapMap)]);
+  const combined = [];
+
+  for (const instId of allInstIds) {
+    // 只处理 USDT 永续
+    if (!instId.endsWith('-USDT-SWAP')) continue;
+
+    const oi = oiMap[instId] || 0;
+    const swap = swapMap[instId];
+    const prevOiVal = prevOi[instId];
+
+    // 计算 OI 变化百分比
+    let oiDeltaPct = 0;
+    if (prevOiVal && prevOiVal > 0 && oi > 0) {
+      oiDeltaPct = ((oi - prevOiVal) / prevOiVal) * 100;
+    }
+
+    // 从 SWAP ticker 获取价格变化和成交量
+    let pxChgPct = 0;
+    let last = 0;
+    let volUsd24h = 0;
+    if (swap) {
+      last = parseFloat(swap.last || 0);
+      const open24h = parseFloat(swap.open24h || 0);
+      if (open24h > 0) {
+        pxChgPct = ((last - open24h) / open24h) * 100;
+      }
+      volUsd24h = parseFloat(swap.volCcy24h || swap.vol24h || 0);
+    }
+
+    // 只保留有意义的数据（有OI变化或有交易活跃度）
+    if (Math.abs(oiDeltaPct) > 0.5 || volUsd24h > 100000) {
+      combined.push({
+        instId,
+        oiDeltaPct: Math.round(oiDeltaPct * 100) / 100,
+        fundingRate: 0, // 无法批量获取，暂不填充
+        pxChgPct: Math.round(pxChgPct * 100) / 100,
+        last,
+        volUsd24h,
+      });
+    }
+  }
+
+  // 保存当前 OI 快照供下次使用
+  saveCurrOi(currOiMap);
+
+  // 按 OI 变化绝对值排序，取 Top 20
+  combined.sort((a, b) => Math.abs(b.oiDeltaPct) - Math.abs(a.oiDeltaPct));
+  return combined.slice(0, 20);
+}
+
 // ===== 综合扫描 =====
 
 async function fullScan() {
   console.log('[OKX-HTTP] 开始扫描...');
   const results = {};
 
-  const [spotTickers, oiChanges, news, importantNews, sentimentRank] = await Promise.allSettled([
+  const [spotTickers, contractData, news, importantNews, sentimentRank] = await Promise.allSettled([
     getSpotTickers(),
-    getOiChanges(),
+    buildContractData(),
     getNews(30),
     getImportantNews(20),
     getSentimentRank(),
@@ -181,7 +292,7 @@ async function fullScan() {
     results.topVolume = withChange.filter(t => t.instId.endsWith('-USDT')).sort((a, b) => b.vol24h - a.vol24h).slice(0, 20);
   }
 
-  results.oiChanges = oiChanges.status === 'fulfilled' ? oiChanges.value : null;
+  results.oiChanges = contractData.status === 'fulfilled' ? contractData.value : null;
   results.news = news.status === 'fulfilled' ? news.value : null;
   results.importantNews = importantNews.status === 'fulfilled' ? importantNews.value : null;
   results.sentimentRank = sentimentRank.status === 'fulfilled' ? sentimentRank.value : null;

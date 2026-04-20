@@ -39,7 +39,7 @@ module.exports = async function handler(req, res) {
       watchlistCount: result.watchlist.length,
       alerts: result.alerts,
       watchlist: result.watchlist.slice(0, 5),
-      topScores: result.allScores.slice(0, 10),
+      topScores: result.allScores.slice(0, 50),
     });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
