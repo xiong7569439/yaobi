@@ -10,6 +10,7 @@ const TMP_DIR = '/tmp';
 const ALERTS_FILE = path.join(TMP_DIR, 'yaobi-alerts.json');
 const LATEST_FILE = path.join(TMP_DIR, 'yaobi-latest.json');
 const STATUS_FILE = path.join(TMP_DIR, 'yaobi-status.json');
+const COUNTS_FILE = path.join(TMP_DIR, 'yaobi-alert-counts.json');
 
 function readJSON(file) {
   try {
@@ -59,4 +60,22 @@ function updateStatus(updates) {
   writeJSON(STATUS_FILE, { ...current, ...updates });
 }
 
-module.exports = { getAlerts, addAlerts, getLatestScan, setLatestScan, getStatus, updateStatus };
+function incrementAlertCount(symbol) {
+  const counts = readJSON(COUNTS_FILE) || {};
+  const now = Date.now();
+  if (!counts[symbol]) counts[symbol] = { count: 0, firstSeen: now, lastSeen: now };
+  counts[symbol].count += 1;
+  counts[symbol].lastSeen = now;
+  writeJSON(COUNTS_FILE, counts);
+}
+
+function getAlertCount(symbol) {
+  const counts = readJSON(COUNTS_FILE) || {};
+  return counts[symbol]?.count || 0;
+}
+
+function getAlertCounts() {
+  return readJSON(COUNTS_FILE) || {};
+}
+
+module.exports = { getAlerts, addAlerts, getLatestScan, setLatestScan, getStatus, updateStatus, incrementAlertCount, getAlertCount, getAlertCounts };

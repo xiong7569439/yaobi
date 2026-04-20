@@ -137,11 +137,15 @@ async function getImportantNews(limit = 20) {
 async function getSentimentRank() {
   try {
     const path = '/api/v5/aigc/mcp/news-sentiment-rank';
-    const body = JSON.stringify({ period: '24h', limit: 20 });
+    const body = JSON.stringify({ period: '24h', limit: 30 });
     const headers = getOkxAuthHeaders('POST', path, body);
     if (!headers['OK-ACCESS-KEY']) return null;
-    const res = await httpPost(`${OKX_BASE}${path}`, { period: '24h', limit: 20 }, headers);
-    return res?.data || null;
+    const res = await httpPost(`${OKX_BASE}${path}`, { period: '24h', limit: 30 }, headers);
+    // 返回格式: { data: [{ details: [...] }] }
+    const raw = res?.data;
+    if (Array.isArray(raw) && raw[0]?.details) return raw[0].details;
+    if (raw?.details) return raw.details;
+    return raw;
   } catch { return null; }
 }
 

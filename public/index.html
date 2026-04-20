@@ -439,6 +439,7 @@ function renderAlerts() {
           <span class="badge ${a.level}">${a.level === 'high' ? '🔴 高' : a.level === 'medium' ? '🟠 中' : '🟡 低'}</span>
           ${dirBadge(a.direction, a.directionScore)}
           ${a.symbol}
+          ${a.alertCount > 1 ? `<span style="font-size:11px;background:rgba(59,130,246,.2);color:var(--accent);padding:2px 6px;border-radius:4px">已提醒${a.alertCount}次</span>` : ''}
           ${a.instId ? `<span style="font-size:12px;color:var(--muted)">${a.instId}</span>` : ''}
         </div>
         <div class="alert-score ${a.level}">${a.totalScore.toFixed(1)}</div>

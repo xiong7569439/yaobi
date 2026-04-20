@@ -3,7 +3,6 @@
  * 与 cron.js 共享逻辑
  */
 const okxHttp = require('./_lib/okx-http');
-const surfHttp = require('./_lib/surf-http');
 const analyzer = require('./_lib/analyzer');
 const store = require('./_lib/store');
 
@@ -13,16 +12,16 @@ module.exports = async function handler(req, res) {
 
   const startTime = Date.now();
   try {
-    const [okxData, surfData] = await Promise.all([
-      okxHttp.fullScan(),
-      surfHttp.fullScan(),
-    ]);
-
-    const result = analyzer.analyze(okxData, surfData);
+    const okxData = await okxHttp.fullScan();
+    const result = analyzer.analyze(okxData);
 
     store.setLatestScan(result);
     if (result.alerts.length > 0) {
       store.addAlerts(result.alerts);
+      for (const alert of result.alerts) {
+        store.incrementAlertCount(alert.symbol);
+        alert.alertCount = store.getAlertCount(alert.symbol);
+      }
     }
 
     const duration = Date.now() - startTime;
