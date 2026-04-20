@@ -100,8 +100,11 @@ async function getNews(limit = 30) {
       detailLvl: 'summary',
     });
     if (!res) return null;
-    // 返回格式: { code: "0", data: { details: [...] } }
-    return res?.data?.details || res?.data || null;
+    // 返回格式: { code: "0", data: [{ details: [...] }] }
+    const raw = res?.data;
+    if (Array.isArray(raw) && raw[0]?.details) return raw[0].details;
+    if (raw?.details) return raw.details;
+    return raw;
   } catch (e) { console.error('[OKX-HTTP] getNews error:', e.message); return null; }
 }
 
@@ -114,7 +117,10 @@ async function getImportantNews(limit = 20) {
       detailLvl: 'summary',
     });
     if (!res) return null;
-    return res?.data?.details || res?.data || null;
+    const raw = res?.data;
+    if (Array.isArray(raw) && raw[0]?.details) return raw[0].details;
+    if (raw?.details) return raw.details;
+    return raw;
   } catch (e) { console.error('[OKX-HTTP] getImportantNews error:', e.message); return null; }
 }
 
@@ -124,10 +130,11 @@ async function getSentimentRank() {
       period: '24h',
     });
     if (!res) return null;
-    // 返回格式: { code: "0", data: [...] } 或 { code: "0", data: { details: [...] } }
+    // 返回格式: { code: "0", data: [{ details: [...] }] }
     const raw = res?.data;
-    if (Array.isArray(raw)) return raw;
+    if (Array.isArray(raw) && raw[0]?.details) return raw[0].details;
     if (raw?.details) return raw.details;
+    if (Array.isArray(raw)) return raw;
     return raw;
   } catch (e) { console.error('[OKX-HTTP] getSentimentRank error:', e.message); return null; }
 }
