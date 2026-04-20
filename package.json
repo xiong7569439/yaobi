@@ -1,0 +1,17 @@
+{
+  "name": "meme-coin-monitor",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": ["crypto", "monitor", "meme-coin"],
+  "author": "",
+  "license": "ISC",
+  "description": "妖币监控系统 - 基于 OKX Agent Trade Kit + Surf 的加密货币异动监控",
+  "dependencies": {
+    "@surf-ai/sdk": "^1.0.1",
+    "express": "^5.2.1"
+  }
+}

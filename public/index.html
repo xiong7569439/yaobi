@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>妖币监控系统 — Meme Coin Monitor</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0e17;--card:#111827;--border:#1e293b;
+  --text:#e2e8f0;--muted:#64748b;--accent:#3b82f6;
+  --green:#10b981;--red:#ef4444;--yellow:#f59e0b;--orange:#f97316;
+}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+a{color:var(--accent);text-decoration:none}
+
+/* Header */
+.header{background:linear-gradient(135deg,#111827,#1e1b4b);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.header h1{font-size:22px;font-weight:700;display:flex;align-items:center;gap:10px}
+.header h1 span{font-size:28px}
+.status-bar{display:flex;align-items:center;gap:16px;font-size:13px}
+.status-dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.status-dot.online{background:var(--green);box-shadow:0 0 8px var(--green)}
+.status-dot.scanning{background:var(--yellow);animation:pulse 1s infinite}
+.status-dot.offline{background:var(--red)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* Controls */
+.controls{display:flex;gap:10px;align-items:center}
+.btn{padding:8px 16px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;font-size:13px;transition:all .2s}
+.btn:hover{border-color:var(--accent);background:#1e293b}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{background:#2563eb}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* Layout */
+.container{max-width:1400px;margin:0 auto;padding:20px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:20px}
+
+/* Cards */
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;transition:border-color .2s}
+.card:hover{border-color:#334155}
+.card-title{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.card-value{font-size:28px;font-weight:700}
+.card-sub{font-size:12px;color:var(--muted);margin-top:4px}
+
+/* Alert Cards */
+.alert-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px;border-left:4px solid var(--border);transition:all .3s}
+.alert-card.high{border-left-color:var(--red);background:linear-gradient(90deg,rgba(239,68,68,.08),transparent)}
+.alert-card.medium{border-left-color:var(--orange);background:linear-gradient(90deg,rgba(249,115,22,.06),transparent)}
+.alert-card.low{border-left-color:var(--yellow);background:linear-gradient(90deg,rgba(245,158,11,.04),transparent)}
+.alert-card.new{animation:slideIn .4s ease-out}
+@keyframes slideIn{from{transform:translateX(-20px);opacity:0}to{transform:translateX(0);opacity:1}}
+.alert-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.alert-symbol{font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px}
+.alert-score{font-size:24px;font-weight:800}
+.alert-score.high{color:var(--red)}
+.alert-score.medium{color:var(--orange)}
+.alert-score.low{color:var(--yellow)}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase}
+.badge.high{background:rgba(239,68,68,.2);color:var(--red)}
+.badge.medium{background:rgba(249,115,22,.2);color:var(--orange)}
+.badge.low{background:rgba(245,158,11,.2);color:var(--yellow)}
+.alert-reasons{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.reason-tag{background:#1e293b;border:1px solid #334155;border-radius:6px;padding:3px 10px;font-size:12px;color:var(--text)}
+.alert-time{font-size:11px;color:var(--muted)}
+.alert-price{font-size:13px;color:var(--muted)}
+
+/* Score breakdown */
+.score-bar{display:flex;align-items:center;gap:8px;margin-top:4px}
+.score-bar-label{font-size:11px;color:var(--muted);width:60px;text-align:right}
+.score-bar-track{flex:1;height:6px;background:#1e293b;border-radius:3px;overflow:hidden}
+.score-bar-fill{height:100%;border-radius:3px;transition:width .5s}
+
+/* Sections */
+.section{margin-bottom:24px}
+.section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.section-title{font-size:16px;font-weight:600}
+
+/* Filter bar */
+.filter-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.filter-bar input{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-size:13px;width:200px}
+.filter-bar input::placeholder{color:var(--muted)}
+.filter-bar select{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:7px 12px;color:var(--text);font-size:13px}
+
+/* Table */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:10px 12px;border-bottom:1px solid var(--border);color:var(--muted);font-weight:500;font-size:12px;text-transform:uppercase}
+td{padding:10px 12px;border-bottom:1px solid var(--border)}
+tr:hover td{background:rgba(59,130,246,.04)}
+.positive{color:var(--green)}
+.negative{color:var(--red)}
+
+/* Countdown */
+.countdown{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)}
+
+/* Toast */
+.toast-container{position:fixed;top:20px;right:20px;z-index:1000;display:flex;flex-direction:column;gap:8px}
+.toast{background:#1e293b;border:1px solid var(--border);border-radius:10px;padding:12px 18px;font-size:13px;animation:toastIn .3s;box-shadow:0 8px 30px rgba(0,0,0,.4);max-width:360px}
+.toast.alert-toast{border-left:4px solid var(--red)}
+@keyframes toastIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* Empty state */
+.empty-state{text-align:center;padding:60px 20px;color:var(--muted)}
+.empty-state .icon{font-size:48px;margin-bottom:12px}
+
+/* Responsive */
+@media(max-width:768px){
+  .header{padding:12px 16px}
+  .header h1{font-size:18px}
+  .container{padding:12px}
+  .grid{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span>🔥</span> 妖币监控系统</h1>
+  <div class="status-bar">
+    <span><span class="status-dot online" id="statusDot"></span> <span id="statusText">连接中...</span></span>
+    <span id="scanStatus" style="color:var(--muted)">等待首次扫描</span>
+  </div>
+  <div class="controls">
+    <button class="btn primary" id="scanBtn" onclick="triggerScan()">⚡ 手动扫描</button>
+    <select class="btn" id="levelFilter" onchange="renderAlerts()">
+      <option value="">全部级别</option>
+      <option value="high">🔴 高优先级</option>
+      <option value="medium">🟠 中优先级</option>
+      <option value="low">🟡 低优先级</option>
+    </select>
+  </div>
+</div>
+
+<div class="container">
+  <!-- Stats Grid -->
+  <div class="grid" id="statsGrid">
+    <div class="card">
+      <div class="card-title">📊 下次扫描</div>
+      <div class="countdown" id="countdown">--:--</div>
+      <div class="card-sub">每5分钟自动扫描</div>
+    </div>
+    <div class="card">
+      <div class="card-title">🚨 活跃告警</div>
+      <div class="card-value" id="alertCount">0</div>
+      <div class="card-sub" id="alertSub">等待扫描</div>
+    </div>
+    <div class="card">
+      <div class="card-title">🔍 已扫描次数</div>
+      <div class="card-value" id="scanCount">0</div>
+      <div class="card-sub" id="scanSub">-</div>
+    </div>
+    <div class="card">
+      <div class="card-title">⏱️ 运行时间</div>
+      <div class="card-value" id="uptime">0s</div>
+      <div class="card-sub" id="lastScanDuration">-</div>
+    </div>
+  </div>
+
+  <!-- Alerts Section -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-title">🔥 妖币告警</div>
+      <div class="filter-bar">
+        <input type="text" id="searchInput" placeholder="搜索代币..." oninput="renderAlerts()">
+      </div>
+    </div>
+    <div id="alertsContainer">
+      <div class="empty-state">
+        <div class="icon">🔍</div>
+        <div>等待首次扫描...</div>
+        <div style="margin-top:8px;font-size:13px">系统启动5秒后将自动执行首次扫描</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Watchlist Section -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-title">👁️ 观察列表 (评分 8-14)</div>
+    </div>
+    <div class="table-wrap">
+      <table id="watchlistTable" style="display:none">
+        <thead>
+          <tr>
+            <th>代币</th>
+            <th>评分</th>
+            <th>价格</th>
+            <th>24h涨跌</th>
+            <th>触发原因</th>
+            <th>时间</th>
+          </tr>
+        </thead>
+        <tbody id="watchlistBody"></tbody>
+      </table>
+      <div id="watchlistEmpty" class="empty-state" style="padding:30px">
+        <div>暂无观察目标</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top Scores Section -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-title">📈 全部评分排名 (Top 50)</div>
+    </div>
+    <div class="table-wrap">
+      <table id="scoresTable" style="display:none">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>代币</th>
+            <th>总分</th>
+            <th>价格</th>
+            <th>新闻</th>
+            <th>社交</th>
+            <th>合约</th>
+            <th>成交量</th>
+            <th>涨跌</th>
+          </tr>
+        </thead>
+        <tbody id="scoresBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toasts"></div>
+
+<script>
+// ===== State =====
+let allAlerts = [];
+let latestScan = null;
+let status = {};
+let eventSource = null;
+
+// ===== SSE Connection =====
+function connectSSE() {
+  if (eventSource) eventSource.close();
+  eventSource = new EventSource('/api/events');
+
+  eventSource.onopen = () => {
+    document.getElementById('statusDot').className = 'status-dot online';
+    document.getElementById('statusText').textContent = '已连接';
+  };
+
+  eventSource.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      handleSSEMessage(msg);
+    } catch {}
+  };
+
+  eventSource.onerror = () => {
+    document.getElementById('statusDot').className = 'status-dot offline';
+    document.getElementById('statusText').textContent = '断开连接';
+    setTimeout(connectSSE, 5000);
+  };
+}
+
+function handleSSEMessage(msg) {
+  switch (msg.type) {
+    case 'connected':
+      fetchAll();
+      break;
+    case 'scan_start':
+      document.getElementById('statusDot').className = 'status-dot scanning';
+      document.getElementById('scanStatus').textContent = '正在扫描...';
+      document.getElementById('scanBtn').disabled = true;
+      break;
+    case 'scan_complete':
+      document.getElementById('statusDot').className = 'status-dot online';
+      document.getElementById('scanStatus').textContent =
+        `上次扫描: ${msg.data.alertCount}个告警, 耗时${(msg.data.duration/1000).toFixed(1)}s`;
+      document.getElementById('scanBtn').disabled = false;
+      // Show toast for new alerts
+      if (msg.data.alertCount > 0) {
+        showToast(`发现 ${msg.data.alertCount} 个妖币信号!`, 'alert-toast');
+        // Play sound
+        try { new Audio('data:audio/wav;base64,UklGRl9vT19teleWQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQ==').play(); } catch{}
+      }
+      fetchAll();
+      break;
+    case 'scan_error':
+      document.getElementById('statusDot').className = 'status-dot online';
+      document.getElementById('scanStatus').textContent = `扫描错误: ${msg.data.message}`;
+      document.getElementById('scanBtn').disabled = false;
+      break;
+    case 'alerts':
+      fetchAlerts();
+      break;
+  }
+}
+
+// ===== API Calls =====
+async function fetchAll() {
+  await Promise.all([fetchStatus(), fetchAlerts(), fetchLatest()]);
+}
+
+async function fetchStatus() {
+  try {
+    const res = await fetch('/api/status');
+    const json = await res.json();
+    if (json.ok) {
+      status = json.data;
+      updateStatusUI();
+    }
+  } catch {}
+}
+
+async function fetchAlerts() {
+  try {
+    const res = await fetch('/api/alerts?limit=200');
+    const json = await res.json();
+    if (json.ok) {
+      allAlerts = json.data;
+      renderAlerts();
+    }
+  } catch {}
+}
+
+async function fetchLatest() {
+  try {
+    const res = await fetch('/api/latest');
+    const json = await res.json();
+    if (json.ok && json.data) {
+      latestScan = json.data;
+      renderWatchlist();
+      renderScores();
+    }
+  } catch {}
+}
+
+async function triggerScan() {
+  const btn = document.getElementById('scanBtn');
+  btn.disabled = true;
+  try {
+    await fetch('/api/scan', { method: 'POST' });
+    showToast('扫描已触发');
+  } catch {
+    btn.disabled = false;
+  }
+}
+
+// ===== Rendering =====
+function updateStatusUI() {
+  document.getElementById('alertCount').textContent = allAlerts.length;
+  const highCount = allAlerts.filter(a => a.level === 'high').length;
+  const medCount = allAlerts.filter(a => a.level === 'medium').length;
+  document.getElementById('alertSub').textContent =
+    highCount || medCount ? `${highCount}高 / ${medCount}中` : '暂无告警';
+
+  document.getElementById('scanCount').textContent = status.totalScans || 0;
+  document.getElementById('scanSub').textContent =
+    status.lastScanDuration ? `上次耗时 ${(status.lastScanDuration/1000).toFixed(1)}s` : '-';
+
+  const uptime = status.uptime || 0;
+  const h = Math.floor(uptime / 3600000);
+  const m = Math.floor((uptime % 3600000) / 60000);
+  document.getElementById('uptime').textContent = h > 0 ? `${h}h${m}m` : `${m}m`;
+  document.getElementById('lastScanDuration').textContent =
+    status.lastScanTime ? `上次: ${new Date(status.lastScanTime).toLocaleTimeString('zh-CN')}` : '-';
+}
+
+function renderAlerts() {
+  const container = document.getElementById('alertsContainer');
+  const levelFilter = document.getElementById('levelFilter').value;
+  const search = document.getElementById('searchInput').value.toUpperCase();
+
+  let filtered = allAlerts;
+  if (levelFilter) filtered = filtered.filter(a => a.level === levelFilter);
+  if (search) filtered = filtered.filter(a => a.symbol.includes(search));
+
+  if (filtered.length === 0) {
+    container.innerHTML = `<div class="empty-state"><div class="icon">🔍</div><div>${allAlerts.length === 0 ? '等待扫描数据...' : '没有匹配的告警'}</div></div>`;
+    return;
+  }
+
+  container.innerHTML = filtered.slice(0, 50).map(a => `
+    <div class="alert-card ${a.level}">
+      <div class="alert-header">
+        <div class="alert-symbol">
+          <span class="badge ${a.level}">${a.level === 'high' ? '🔴 高' : a.level === 'medium' ? '🟠 中' : '🟡 低'}</span>
+          ${a.symbol}
+          ${a.instId ? `<span style="font-size:12px;color:var(--muted)">${a.instId}</span>` : ''}
+        </div>
+        <div class="alert-score ${a.level}">${a.totalScore.toFixed(1)}</div>
+      </div>
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+        ${a.last ? `<span class="alert-price">$${formatNum(a.last)}</span>` : ''}
+        ${a.change24hPct != null ? `<span class="${a.change24hPct >= 0 ? 'positive' : 'negative'}">${a.change24hPct >= 0 ? '+' : ''}${a.change24hPct.toFixed(2)}%</span>` : ''}
+        ${a.vol24h ? `<span class="alert-price">Vol: $${formatVol(a.vol24h)}</span>` : ''}
+      </div>
+      <div class="alert-reasons">
+        ${(a.reasons || []).map(r => `<span class="reason-tag">${r}</span>`).join('')}
+      </div>
+      ${renderScoreBars(a.scores)}
+      <div class="alert-time">${timeAgo(a.createdAt || a.timestamp)}</div>
+    </div>
+  `).join('');
+}
+
+function renderScoreBars(scores) {
+  if (!scores) return '';
+  const dims = [
+    ['社交', scores.socialHeat, '#3b82f6'],
+    ['价格', scores.priceAction, '#10b981'],
+    ['成交量', scores.volumeSpike, '#f59e0b'],
+    ['合约', scores.contractData, '#ef4444'],
+    ['新闻', scores.newsHeat, '#8b5cf6'],
+    ['链上', scores.onChain, '#06b6d4'],
+    ['情绪', scores.sentiment, '#ec4899'],
+  ];
+  return `<div style="margin-top:8px">${dims.map(([label, val, color]) => `
+    <div class="score-bar">
+      <span class="score-bar-label">${label}</span>
+      <div class="score-bar-track"><div class="score-bar-fill" style="width:${val || 0}%;background:${color}"></div></div>
+      <span style="font-size:11px;width:30px;color:var(--muted)">${(val||0).toFixed(0)}</span>
+    </div>
+  `).join('')}</div>`;
+}
+
+function renderWatchlist() {
+  const table = document.getElementById('watchlistTable');
+  const empty = document.getElementById('watchlistEmpty');
+  const body = document.getElementById('watchlistBody');
+  const list = latestScan?.watchlist || [];
+
+  if (list.length === 0) {
+    table.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+
+  table.style.display = 'table';
+  empty.style.display = 'none';
+  body.innerHTML = list.map(t => `
+    <tr>
+      <td><strong>${t.symbol}</strong></td>
+      <td>${t.totalScore.toFixed(1)}</td>
+      <td>${t.last ? '$' + formatNum(t.last) : '-'}</td>
+      <td class="${(t.change24hPct||0) >= 0 ? 'positive' : 'negative'}">${t.change24hPct != null ? (t.change24hPct >= 0 ? '+' : '') + t.change24hPct.toFixed(2) + '%' : '-'}</td>
+      <td>${(t.reasons||[]).join(', ') || '-'}</td>
+      <td class="alert-time">${timeAgo(t.timestamp)}</td>
+    </tr>
+  `).join('');
+}
+
+function renderScores() {
+  const table = document.getElementById('scoresTable');
+  const body = document.getElementById('scoresBody');
+  const list = latestScan?.allScores || [];
+
+  if (list.length === 0) { table.style.display = 'none'; return; }
+
+  table.style.display = 'table';
+  body.innerHTML = list.map((t, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td><strong>${t.symbol}</strong></td>
+      <td style="color:${t.totalScore >= 80 ? 'var(--red)' : t.totalScore >= 60 ? 'var(--orange)' : t.totalScore >= 30 ? 'var(--yellow)' : 'var(--muted)'};font-weight:700">${t.totalScore.toFixed(1)}</td>
+      <td>${t.last ? '$' + formatNum(t.last) : '-'}</td>
+      <td>${(t.scores?.newsHeat||0).toFixed(0)}</td>
+      <td>${(t.scores?.socialHeat||0).toFixed(0)}</td>
+      <td>${(t.scores?.contractData||0).toFixed(0)}</td>
+      <td>${(t.scores?.volumeSpike||0).toFixed(0)}</td>
+      <td class="${(t.change24hPct||0) >= 0 ? 'positive' : 'negative'}">${t.change24hPct != null ? (t.change24hPct >= 0 ? '+' : '') + t.change24hPct.toFixed(2) + '%' : '-'}</td>
+    </tr>
+  `).join('');
+}
+
+// ===== Countdown =====
+function updateCountdown() {
+  if (!status.nextScanTime) return;
+  const remaining = Math.max(0, status.nextScanTime - Date.now());
+  const m = Math.floor(remaining / 60000);
+  const s = Math.floor((remaining % 60000) / 1000);
+  document.getElementById('countdown').textContent =
+    status.isScanning ? '扫描中...' : `${m}:${String(s).padStart(2, '0')}`;
+}
+setInterval(updateCountdown, 1000);
+setInterval(fetchStatus, 30000); // 每30s刷新状态
+
+// ===== Utils =====
+function formatNum(n) {
+  n = parseFloat(n);
+  if (n >= 1000) return n.toLocaleString('en-US', {maximumFractionDigits:2});
+  if (n >= 1) return n.toFixed(2);
+  if (n >= 0.01) return n.toFixed(4);
+  return n.toPrecision(4);
+}
+
+function formatVol(v) {
+  v = parseFloat(v);
+  if (v >= 1e9) return (v/1e9).toFixed(1) + 'B';
+  if (v >= 1e6) return (v/1e6).toFixed(1) + 'M';
+  if (v >= 1e3) return (v/1e3).toFixed(1) + 'K';
+  return v.toFixed(0);
+}
+
+function timeAgo(ts) {
+  if (!ts) return '';
+  const diff = Date.now() - ts;
+  if (diff < 60000) return '刚刚';
+  if (diff < 3600000) return Math.floor(diff/60000) + '分钟前';
+  if (diff < 86400000) return Math.floor(diff/3600000) + '小时前';
+  return Math.floor(diff/86400000) + '天前';
+}
+
+function showToast(msg, cls = '') {
+  const container = document.getElementById('toasts');
+  const toast = document.createElement('div');
+  toast.className = `toast ${cls}`;
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 5000);
+}
+
+// ===== Init =====
+connectSSE();
+fetchAll();
+</script>
+</body>
+</html>
