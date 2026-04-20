@@ -73,13 +73,30 @@ app.get('/api/logs', (req, res) => {
 
 // 手动触发扫描
 app.post('/api/scan', async (req, res) => {
-  const status = store.getStatus();
-  if (status.isScanning) {
+  const st = store.getStatus();
+  if (st.isScanning) {
     return res.json({ ok: false, message: '扫描正在进行中' });
   }
-  res.json({ ok: true, message: '扫描已触发' });
-  // 异步执行
-  scanner.runScan();
+  try {
+    const startTime = Date.now();
+    const result = await scanner.runScan();
+    const duration = Date.now() - startTime;
+    if (result) {
+      res.json({
+        ok: true,
+        duration,
+        alertCount: result.alerts.length,
+        watchlistCount: result.watchlist.length,
+        alerts: result.alerts,
+        watchlist: result.watchlist.slice(0, 10),
+        topScores: result.allScores.slice(0, 50),
+      });
+    } else {
+      res.json({ ok: true, duration, alertCount: 0, alerts: [], watchlist: [], topScores: [] });
+    }
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
 });
 
 // ============ 启动 ============
