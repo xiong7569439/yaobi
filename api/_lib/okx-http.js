@@ -1,7 +1,7 @@
 /**
  * OKX HTTP API 数据获取 (Vercel serverless 兼容)
- * 使用 OKX 公开 REST API，无需认证
- * 新闻 API 需要签名: 通过 AIGC MCP 端点
+ * 公开 Market API 无需认证
+ * 新闻/情绪 API 使用 /api/v5/orbit/ 端点, 需要 GET + 签名
  */
 const https = require('https');
 const crypto = require('crypto');
@@ -28,56 +28,36 @@ function httpGet(url, headers = {}) {
   });
 }
 
-function httpPost(url, body, headers = {}) {
-  return new Promise((resolve, reject) => {
-    const urlObj = new URL(url);
-    const postData = JSON.stringify(body);
-    const opts = {
-      hostname: urlObj.hostname,
-      path: urlObj.pathname + urlObj.search,
-      method: 'POST',
-      timeout: 15000,
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(postData),
-        ...headers,
-      },
-    };
-    const req = https.request(opts, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try { resolve(JSON.parse(data)); } catch { resolve(null); }
-      });
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
-    req.write(postData);
-    req.end();
-  });
-}
+// ===== OKX 签名 (GET 请求: timestamp + GET + path?query) =====
 
-// ===== OKX 签名 (用于新闻 API) =====
-
-function signOkx(timestamp, method, path, body = '') {
+function signOkx(timestamp, method, requestPath) {
   const secretKey = process.env.OKX_SECRET_KEY;
   if (!secretKey) return null;
-  const prehash = timestamp + method + path + body;
+  const prehash = timestamp + method + requestPath;
   return crypto.createHmac('sha256', secretKey).update(prehash).digest('base64');
 }
 
-function getOkxAuthHeaders(method, path, body = '') {
+function authGet(path, query = {}) {
   const apiKey = process.env.OKX_API_KEY;
   const passphrase = process.env.OKX_PASSPHRASE;
-  if (!apiKey) return {};
+  if (!apiKey) return Promise.resolve(null);
+
+  // 构造 query string
+  const qs = Object.entries(query)
+    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join('&');
+  const fullPath = qs ? `${path}?${qs}` : path;
+
   const ts = new Date().toISOString();
-  const sign = signOkx(ts, method, path, body);
-  return {
+  const sign = signOkx(ts, 'GET', fullPath);
+  const headers = {
     'OK-ACCESS-KEY': apiKey,
     'OK-ACCESS-SIGN': sign,
     'OK-ACCESS-TIMESTAMP': ts,
     'OK-ACCESS-PASSPHRASE': passphrase,
   };
+  return httpGet(`${OKX_BASE}${fullPath}`, headers);
 }
 
 // ===== 公开 Market API (无需认证) =====
@@ -110,54 +90,53 @@ async function getFundingRates() {
   } catch { return null; }
 }
 
-// ===== 新闻 API (需要签名) =====
+// ===== 新闻 API (GET /api/v5/orbit/ + 签名) =====
 
 async function getNews(limit = 30) {
   try {
-    const path = '/api/v5/aigc/mcp/news-latest';
-    const body = JSON.stringify({ limit, lang: 'zh-CN' });
-    const headers = getOkxAuthHeaders('POST', path, body);
-    if (!headers['OK-ACCESS-KEY']) return null;
-    const res = await httpPost(`${OKX_BASE}${path}`, { limit, lang: 'zh-CN' }, headers);
+    const res = await authGet('/api/v5/orbit/news-search', {
+      sortBy: 'latest',
+      limit,
+      detailLvl: 'summary',
+    });
+    if (!res) return null;
+    // 返回格式: { code: "0", data: { details: [...] } }
     return res?.data?.details || res?.data || null;
-  } catch { return null; }
+  } catch (e) { console.error('[OKX-HTTP] getNews error:', e.message); return null; }
 }
 
 async function getImportantNews(limit = 20) {
   try {
-    const path = '/api/v5/aigc/mcp/news-important';
-    const body = JSON.stringify({ limit, lang: 'zh-CN' });
-    const headers = getOkxAuthHeaders('POST', path, body);
-    if (!headers['OK-ACCESS-KEY']) return null;
-    const res = await httpPost(`${OKX_BASE}${path}`, { limit, lang: 'zh-CN' }, headers);
+    const res = await authGet('/api/v5/orbit/news-search', {
+      sortBy: 'latest',
+      importance: 'high',
+      limit,
+      detailLvl: 'summary',
+    });
+    if (!res) return null;
     return res?.data?.details || res?.data || null;
-  } catch { return null; }
+  } catch (e) { console.error('[OKX-HTTP] getImportantNews error:', e.message); return null; }
 }
 
 async function getSentimentRank() {
   try {
-    const path = '/api/v5/aigc/mcp/news-sentiment-rank';
-    const body = JSON.stringify({ period: '24h', limit: 30 });
-    const headers = getOkxAuthHeaders('POST', path, body);
-    if (!headers['OK-ACCESS-KEY']) return null;
-    const res = await httpPost(`${OKX_BASE}${path}`, { period: '24h', limit: 30 }, headers);
-    // 返回格式: { data: [{ details: [...] }] }
+    const res = await authGet('/api/v5/orbit/currency-sentiment-ranking', {
+      period: '24h',
+    });
+    if (!res) return null;
+    // 返回格式: { code: "0", data: [...] } 或 { code: "0", data: { details: [...] } }
     const raw = res?.data;
-    if (Array.isArray(raw) && raw[0]?.details) return raw[0].details;
+    if (Array.isArray(raw)) return raw;
     if (raw?.details) return raw.details;
     return raw;
-  } catch { return null; }
+  } catch (e) { console.error('[OKX-HTTP] getSentimentRank error:', e.message); return null; }
 }
 
-// ===== OI 变化 (通过 AIGC MCP) =====
+// ===== OI 数据 (公开端点, 无需认证) =====
 
 async function getOiChanges() {
   try {
-    const path = '/api/v5/aigc/mcp/market-oi-change';
-    const body = JSON.stringify({ instType: 'SWAP', bar: '1H', sortBy: 'oiDeltaPct', sortOrder: 'desc', limit: 20 });
-    const headers = getOkxAuthHeaders('POST', path, body);
-    if (!headers['OK-ACCESS-KEY']) return null;
-    const res = await httpPost(`${OKX_BASE}${path}`, JSON.parse(body), headers);
+    const res = await httpGet(`${OKX_BASE}/api/v5/public/open-interest?instType=SWAP`);
     return res?.data || null;
   } catch { return null; }
 }
@@ -205,6 +184,8 @@ async function fullScan() {
     topVolume: results.topVolume?.length || 0,
     oiChanges: Array.isArray(results.oiChanges) ? results.oiChanges.length : 0,
     news: Array.isArray(results.news) ? results.news.length : 0,
+    importantNews: Array.isArray(results.importantNews) ? results.importantNews.length : 0,
+    sentimentRank: Array.isArray(results.sentimentRank) ? results.sentimentRank.length : 0,
   });
   return results;
 }
