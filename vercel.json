@@ -1,6 +1,7 @@
 {
   "version": 2,
-  "buildCommand": "echo 'no build needed'",
+  "framework": null,
+  "buildCommand": "",
   "outputDirectory": "public",
   "functions": {
     "api/*.js": {
