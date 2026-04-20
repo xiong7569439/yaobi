@@ -4,3 +4,4 @@ temp-surf-skills/
 .env
 *.log
 .vercel/
+.vercel

@@ -245,8 +245,25 @@ function connectSSE() {
     // Vercel: 用轮询替代 SSE
     document.getElementById('statusDot').className = 'status-dot online';
     document.getElementById('statusText').textContent = '已连接 (Vercel)';
-    setInterval(fetchAll, 60000); // 每60s轮询
-    fetchAll();
+    // 每5分钟自动触发一次扫描
+    async function autoScan() {
+      try {
+        const res = await fetch('/api/scan', { method: 'POST' });
+        const json = await res.json();
+        if (json.ok && json.alerts) {
+          allAlerts = [...json.alerts, ...allAlerts].slice(0, 200);
+          renderAlerts();
+          if (json.topScores || json.watchlist) {
+            latestScan = { alerts: json.alerts, watchlist: json.watchlist || [], allScores: json.topScores || [] };
+            renderWatchlist();
+            renderScores();
+          }
+        }
+      } catch {}
+      fetchStatus();
+    }
+    autoScan(); // 立即执行一次
+    setInterval(autoScan, 5 * 60 * 1000); // 每5分钟
     return;
   }
   // 本地: 使用 SSE
