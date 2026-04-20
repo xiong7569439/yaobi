@@ -61,6 +61,9 @@ a{color:var(--accent);text-decoration:none}
 .badge.high{background:rgba(239,68,68,.2);color:var(--red)}
 .badge.medium{background:rgba(249,115,22,.2);color:var(--orange)}
 .badge.low{background:rgba(245,158,11,.2);color:var(--yellow)}
+.badge.long{background:rgba(16,185,129,.2);color:var(--green)}
+.badge.short{background:rgba(239,68,68,.2);color:var(--red)}
+.badge.neutral{background:rgba(100,116,139,.2);color:var(--muted)}
 .alert-reasons{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .reason-tag{background:#1e293b;border:1px solid #334155;border-radius:6px;padding:3px 10px;font-size:12px;color:var(--text)}
 .alert-time{font-size:11px;color:var(--muted)}
@@ -178,7 +181,7 @@ tr:hover td{background:rgba(59,130,246,.04)}
   <!-- Watchlist Section -->
   <div class="section">
     <div class="section-header">
-      <div class="section-title">👁️ 观察列表 (评分 8-14)</div>
+      <div class="section-title">👁️ 观察列表 (评分 20-39)</div>
     </div>
     <div class="table-wrap">
       <table id="watchlistTable" style="display:none">
@@ -186,6 +189,7 @@ tr:hover td{background:rgba(59,130,246,.04)}
           <tr>
             <th>代币</th>
             <th>评分</th>
+            <th>方向</th>
             <th>价格</th>
             <th>24h涨跌</th>
             <th>触发原因</th>
@@ -212,6 +216,7 @@ tr:hover td{background:rgba(59,130,246,.04)}
             <th>#</th>
             <th>代币</th>
             <th>总分</th>
+            <th>方向</th>
             <th>价格</th>
             <th>新闻</th>
             <th>社交</th>
@@ -432,6 +437,7 @@ function renderAlerts() {
       <div class="alert-header">
         <div class="alert-symbol">
           <span class="badge ${a.level}">${a.level === 'high' ? '🔴 高' : a.level === 'medium' ? '🟠 中' : '🟡 低'}</span>
+          ${dirBadge(a.direction, a.directionScore)}
           ${a.symbol}
           ${a.instId ? `<span style="font-size:12px;color:var(--muted)">${a.instId}</span>` : ''}
         </div>
@@ -441,7 +447,9 @@ function renderAlerts() {
         ${a.last ? `<span class="alert-price">$${formatNum(a.last)}</span>` : ''}
         ${a.change24hPct != null ? `<span class="${a.change24hPct >= 0 ? 'positive' : 'negative'}">${a.change24hPct >= 0 ? '+' : ''}${a.change24hPct.toFixed(2)}%</span>` : ''}
         ${a.vol24h ? `<span class="alert-price">Vol: $${formatVol(a.vol24h)}</span>` : ''}
+        ${a.fundingRate ? `<span class="alert-price">费率: ${(a.fundingRate * 100).toFixed(3)}%</span>` : ''}
       </div>
+      ${a.directionReasons && a.directionReasons.length ? `<div style="margin-top:6px;font-size:12px;color:var(--muted)">方向依据: ${a.directionReasons.join(' / ')}</div>` : ''}
       <div class="alert-reasons">
         ${(a.reasons || []).map(r => `<span class="reason-tag">${r}</span>`).join('')}
       </div>
@@ -489,6 +497,7 @@ function renderWatchlist() {
     <tr>
       <td><strong>${t.symbol}</strong></td>
       <td>${t.totalScore.toFixed(1)}</td>
+      <td>${dirBadge(t.direction, t.directionScore)}</td>
       <td>${t.last ? '$' + formatNum(t.last) : '-'}</td>
       <td class="${(t.change24hPct||0) >= 0 ? 'positive' : 'negative'}">${t.change24hPct != null ? (t.change24hPct >= 0 ? '+' : '') + t.change24hPct.toFixed(2) + '%' : '-'}</td>
       <td>${(t.reasons||[]).join(', ') || '-'}</td>
@@ -510,6 +519,7 @@ function renderScores() {
       <td>${i + 1}</td>
       <td><strong>${t.symbol}</strong></td>
       <td style="color:${t.totalScore >= 80 ? 'var(--red)' : t.totalScore >= 60 ? 'var(--orange)' : t.totalScore >= 30 ? 'var(--yellow)' : 'var(--muted)'};font-weight:700">${t.totalScore.toFixed(1)}</td>
+      <td>${dirBadge(t.direction, t.directionScore)}</td>
       <td>${t.last ? '$' + formatNum(t.last) : '-'}</td>
       <td>${(t.scores?.newsHeat||0).toFixed(0)}</td>
       <td>${(t.scores?.socialHeat||0).toFixed(0)}</td>
@@ -533,6 +543,12 @@ setInterval(updateCountdown, 1000);
 setInterval(fetchStatus, 30000); // 每30s刷新状态
 
 // ===== Utils =====
+function dirBadge(dir, score) {
+  if (!dir || dir === 'neutral') return '<span class="badge neutral">➖ 观望</span>';
+  if (dir === 'long') return `<span class="badge long">🟢 做多 ${score ? score+'%' : ''}</span>`;
+  return `<span class="badge short">🔴 做空 ${score ? score+'%' : ''}</span>`;
+}
+
 function formatNum(n) {
   n = parseFloat(n);
   if (n >= 1000) return n.toLocaleString('en-US', {maximumFractionDigits:2});

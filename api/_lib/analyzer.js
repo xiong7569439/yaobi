@@ -10,7 +10,11 @@
  * - 链上活跃 (10%)  — DEX 交易活跃度突增
  * - 情绪指标 (10%)  — 新闻/社交情绪偏正面
  * 
- * 总分 >= 60 触发告警, >= 80 高优先级
+ * 总分 >= 40 触发告警, >= 65 高优先级
+ * 
+ * 方向判断:
+ * - 做多: 价格上涨 + OI增长 + 正费率 + 正面情绪
+ * - 做空: 价格暴涨后高费率(过热) / 价格暴跌 + OI增长(空头主导)
  */
 
 const WEIGHTS = {
@@ -51,8 +55,8 @@ const THRESHOLDS = {
   newsCount_high: 5,          // 5条以上新闻 满分
   newsCount_mid: 3,           // 3条 高分
   // 告警
-  alertThreshold: 15,         // 总分 >= 15 触发告警
-  highPriorityThreshold: 45,  // >= 45 高优先级
+  alertThreshold: 40,         // 总分 >= 40 触发告警
+  highPriorityThreshold: 65,  // >= 65 高优先级
 };
 
 /**
@@ -137,22 +141,75 @@ function analyzeToken(tokenData) {
   }
   totalScore = Math.round(totalScore * 100) / 100;
 
+  // ===== 方向判断 (做多 / 做空 / 观望) =====
+  const rawChange = tokenData.change24hPct || 0;
+  const rawFundingRate = tokenData.fundingRate || 0;
+  const rawOiChange = tokenData.oiChangePct || 0;
+  const sentiment = sentimentScore;
+
+  let direction = 'neutral';   // neutral=观望, long=做多, short=做空
+  let directionScore = 0;      // 方向置信度 0-100
+  const dirReasons = [];
+
+  // --- 做多信号 ---
+  let longPoints = 0;
+  if (rawChange > 5) { longPoints += 25; dirReasons.push('价格上涨'); }
+  if (rawChange > 20) { longPoints += 15; }
+  if (rawOiChange > 5) { longPoints += 20; dirReasons.push('OI增长'); }
+  if (rawFundingRate > 0 && rawFundingRate < 0.03) { longPoints += 10; dirReasons.push('费率健康'); }
+  if (sentiment > 50) { longPoints += 15; dirReasons.push('情绪正面'); }
+  if ((tokenData.socialScore || 0) > 40) { longPoints += 15; dirReasons.push('社交关注'); }
+
+  // --- 做空信号 ---
+  let shortPoints = 0;
+  const shortReasons = [];
+  // 场景1: 暴涨后过热 (高费率 + 价格已大涨 = 多头拥挤)
+  if (rawChange > 30 && rawFundingRate > 0.03) { shortPoints += 35; shortReasons.push('多头过热'); }
+  if (rawFundingRate > 0.05) { shortPoints += 20; shortReasons.push('费率极高'); }
+  // 场景2: 价格暴跌 + OI增长 = 空头主导
+  if (rawChange < -15) { shortPoints += 25; shortReasons.push('价格暴跌'); }
+  if (rawChange < -15 && rawOiChange > 5) { shortPoints += 20; shortReasons.push('空头加仓'); }
+  // 场景3: 情绪极端负面
+  if (sentiment > 0 && sentiment < 25) { shortPoints += 10; shortReasons.push('情绪恐慌'); }
+  // 场景4: 价格已翻倍，获利盘压力
+  if (rawChange > 80) { shortPoints += 15; shortReasons.push('获利盘压力'); }
+
+  if (longPoints > shortPoints && longPoints >= 25) {
+    direction = 'long';
+    directionScore = Math.min(100, longPoints);
+  } else if (shortPoints > longPoints && shortPoints >= 25) {
+    direction = 'short';
+    directionScore = Math.min(100, shortPoints);
+    dirReasons.length = 0;
+    dirReasons.push(...shortReasons);
+  } else {
+    direction = 'neutral';
+    directionScore = Math.max(longPoints, shortPoints);
+    dirReasons.length = 0;
+    dirReasons.push('信号不明确');
+  }
+
   // 确定告警级别
   let level = 'none';
   if (totalScore >= THRESHOLDS.highPriorityThreshold) level = 'high';
   else if (totalScore >= THRESHOLDS.alertThreshold) level = 'medium';
-  else if (totalScore >= 40) level = 'low';
+  else if (totalScore >= 25) level = 'low';
 
   return {
     symbol,
     instId,
     totalScore,
     level,
+    direction,           // 'long' | 'short' | 'neutral'
+    directionScore,      // 方向置信度 0-100
+    directionReasons: dirReasons,
     scores,
     reasons,
     last: tokenData.last,
     change24hPct: tokenData.change24hPct,
     vol24h: tokenData.vol24h,
+    fundingRate: tokenData.fundingRate,
+    oiChangePct: tokenData.oiChangePct,
     timestamp: Date.now(),
   };
 }
@@ -318,7 +375,7 @@ function analyze(okxData, surfData) {
 
   // 过滤出达到告警阈值的
   const alerts = results.filter(r => r.totalScore >= THRESHOLDS.alertThreshold);
-  const watchlist = results.filter(r => r.totalScore >= 8 && r.totalScore < THRESHOLDS.alertThreshold).slice(0, 10);
+  const watchlist = results.filter(r => r.totalScore >= 20 && r.totalScore < THRESHOLDS.alertThreshold).slice(0, 10);
 
   console.log(`[Analyzer] 分析完成: ${results.length}个代币, ${alerts.length}个告警, ${watchlist.length}个观察`);
 
