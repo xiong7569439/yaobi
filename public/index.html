@@ -237,7 +237,19 @@ let status = {};
 let eventSource = null;
 
 // ===== SSE Connection =====
+// ===== SSE Connection (local) / Polling (Vercel) =====
+const isVercel = location.hostname !== 'localhost' && location.hostname !== '127.0.0.1';
+
 function connectSSE() {
+  if (isVercel) {
+    // Vercel: 用轮询替代 SSE
+    document.getElementById('statusDot').className = 'status-dot online';
+    document.getElementById('statusText').textContent = '已连接 (Vercel)';
+    setInterval(fetchAll, 60000); // 每60s轮询
+    fetchAll();
+    return;
+  }
+  // 本地: 使用 SSE
   if (eventSource) eventSource.close();
   eventSource = new EventSource('/api/events');
 
@@ -336,11 +348,31 @@ async function fetchLatest() {
 async function triggerScan() {
   const btn = document.getElementById('scanBtn');
   btn.disabled = true;
+  btn.textContent = '⚡ 扫描中...';
   try {
-    await fetch('/api/scan', { method: 'POST' });
-    showToast('扫描已触发');
-  } catch {
+    const res = await fetch('/api/scan', { method: 'POST' });
+    const json = await res.json();
+    if (json.ok) {
+      showToast(`扫描完成: ${json.alertCount}个告警, 耗时${(json.duration/1000).toFixed(1)}s`);
+      // 直接使用返回结果更新页面
+      if (json.alerts) {
+        allAlerts = [...json.alerts, ...allAlerts].slice(0, 200);
+        renderAlerts();
+      }
+      if (json.topScores || json.watchlist) {
+        latestScan = { alerts: json.alerts, watchlist: json.watchlist || [], allScores: json.topScores || [] };
+        renderWatchlist();
+        renderScores();
+      }
+      fetchStatus();
+    } else {
+      showToast(json.message || '扫描失败');
+    }
+  } catch(e) {
+    showToast('扫描请求失败');
+  } finally {
     btn.disabled = false;
+    btn.textContent = '⚡ 手动扫描';
   }
 }
 
