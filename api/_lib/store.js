@@ -11,6 +11,7 @@ const ALERTS_FILE = path.join(TMP_DIR, 'yaobi-alerts.json');
 const LATEST_FILE = path.join(TMP_DIR, 'yaobi-latest.json');
 const STATUS_FILE = path.join(TMP_DIR, 'yaobi-status.json');
 const COUNTS_FILE = path.join(TMP_DIR, 'yaobi-alert-counts.json');
+const MARKET_FILE = path.join(TMP_DIR, 'yaobi-market-context.json');
 
 function readJSON(file) {
   try {
@@ -86,4 +87,7 @@ function getAlertCounts() {
   return readJSON(COUNTS_FILE) || {};
 }
 
-module.exports = { getAlerts, addAlerts, getLatestScan, setLatestScan, getStatus, updateStatus, incrementAlertCount, getAlertCount, getAlertCounts };
+function setMarketContext(ctx) { writeJSON(MARKET_FILE, ctx); }
+function getMarketContext() { return readJSON(MARKET_FILE); }
+
+module.exports = { getAlerts, addAlerts, getLatestScan, setLatestScan, getStatus, updateStatus, incrementAlertCount, getAlertCount, getAlertCounts, setMarketContext, getMarketContext };

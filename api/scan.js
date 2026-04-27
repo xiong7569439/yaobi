@@ -5,6 +5,8 @@
 const okxHttp = require('./_lib/okx-http');
 const analyzer = require('./_lib/analyzer');
 const store = require('./_lib/store');
+const tracker = require('./_lib/tracker');
+const learner = require('./_lib/learner');
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -22,6 +24,14 @@ module.exports = async function handler(req, res) {
         store.incrementAlertCount(alert.symbol);
         alert.alertCount = store.getAlertCount(alert.symbol);
       }
+    }
+
+    // 价格追踪
+    try {
+      tracker.recordAlerts(result.alerts);
+      await tracker.checkPending();
+    } catch (e) {
+      console.error('[Scan] 追踪异常:', e.message);
     }
 
     const duration = Date.now() - startTime;

@@ -5,6 +5,8 @@
 const okxHttp = require('./_lib/okx-http');
 const analyzer = require('./_lib/analyzer');
 const store = require('./_lib/store');
+const tracker = require('./_lib/tracker');
+const learner = require('./_lib/learner');
 
 module.exports = async function handler(req, res) {
   // Vercel Cron 会发送 GET 请求，验证 CRON_SECRET
@@ -20,12 +22,31 @@ module.exports = async function handler(req, res) {
     const result = analyzer.analyze(okxData);
 
     store.setLatestScan(result);
+    if (result.marketContext) store.setMarketContext(result.marketContext);
     if (result.alerts.length > 0) {
       store.addAlerts(result.alerts);
       for (const alert of result.alerts) {
         store.incrementAlertCount(alert.symbol);
         alert.alertCount = store.getAlertCount(alert.symbol);
       }
+    }
+
+    // 价格追踪
+    try {
+      tracker.recordAlerts(result.alerts);
+      await tracker.checkPending();
+    } catch (e) {
+      console.error('[Cron] 追踪异常:', e.message);
+    }
+
+    // 学习调度
+    try {
+      const completed = tracker.getCompletedRecords();
+      if (completed.length >= 10) {
+        learner.analyze(completed, store.getAlertCounts());
+      }
+    } catch (e) {
+      console.error('[Cron] 学习异常:', e.message);
     }
 
     const duration = Date.now() - startTime;

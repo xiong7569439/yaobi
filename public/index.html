@@ -108,6 +108,49 @@ tr:hover td{background:rgba(59,130,246,.04)}
 .empty-state{text-align:center;padding:60px 20px;color:var(--muted)}
 .empty-state .icon{font-size:48px;margin-bottom:12px}
 
+/* Tabs */
+.tabs{display:flex;gap:0;margin-bottom:16px;border-bottom:1px solid var(--border)}
+.tab{padding:10px 20px;cursor:pointer;font-size:14px;color:var(--muted);border-bottom:2px solid transparent;transition:all .2s}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab-content{display:none}
+.tab-content.active{display:block}
+
+/* Tracking cards */
+.track-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.track-symbol{font-weight:700;font-size:16px;min-width:80px}
+.track-returns{display:flex;gap:12px}
+.return-badge{padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600}
+.return-badge.positive{background:rgba(16,185,129,.15);color:var(--green)}
+.return-badge.negative{background:rgba(239,68,68,.15);color:var(--red)}
+.return-badge.pending{background:rgba(100,116,139,.15);color:var(--muted)}
+
+/* Learning stats */
+.learn-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px}
+.learn-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px}
+.learn-card .label{font-size:12px;color:var(--muted);margin-bottom:6px}
+.learn-card .value{font-size:22px;font-weight:700}
+.decay-list{display:flex;flex-direction:column;gap:8px}
+.decay-item{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center}
+.decay-factor{font-weight:700;padding:2px 8px;border-radius:4px;font-size:13px}
+.decay-factor.severe{background:rgba(239,68,68,.2);color:var(--red)}
+.decay-factor.moderate{background:rgba(249,115,22,.2);color:var(--orange)}
+.decay-factor.mild{background:rgba(245,158,11,.2);color:var(--yellow)}
+.hour-bar{display:flex;align-items:flex-end;gap:4px;height:100px;margin-top:8px}
+.hour-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px}
+.hour-col .bar{width:100%;border-radius:3px 3px 0 0;min-height:2px;transition:height .3s}
+.hour-col .lbl{font-size:9px;color:var(--muted)}
+
+/* Market context bar */
+.market-bar{background:linear-gradient(135deg,#111827,#1a1a3e);border:1px solid var(--border);border-radius:12px;padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+.market-item{display:flex;align-items:center;gap:8px}
+.market-item .coin{font-weight:700;font-size:15px}
+.market-item .price{font-size:18px;font-weight:700}
+.market-item .change{font-size:14px;font-weight:600;padding:2px 8px;border-radius:4px}
+.market-item .change.up{background:rgba(16,185,129,.15);color:var(--green)}
+.market-item .change.down{background:rgba(239,68,68,.15);color:var(--red)}
+.market-sep{width:1px;height:28px;background:var(--border)}
+
 /* Responsive */
 @media(max-width:768px){
   .header{padding:12px 16px}
@@ -137,6 +180,24 @@ tr:hover td{background:rgba(59,130,246,.04)}
 </div>
 
 <div class="container">
+  <!-- Market Context Bar -->
+  <div class="market-bar" id="marketBar" style="display:none">
+    <span style="color:var(--muted);font-size:13px">📈 大盘</span>
+    <div class="market-item">
+      <span class="coin">BTC</span>
+      <span class="price" id="btcPrice">--</span>
+      <span class="change" id="btcChange">--</span>
+    </div>
+    <div class="market-sep"></div>
+    <div class="market-item">
+      <span class="coin">ETH</span>
+      <span class="price" id="ethPrice">--</span>
+      <span class="change" id="ethChange">--</span>
+    </div>
+    <div class="market-sep"></div>
+    <span style="color:var(--muted);font-size:12px" id="marketSummary"></span>
+  </div>
+
   <!-- Stats Grid -->
   <div class="grid" id="statsGrid">
     <div class="card">
@@ -161,6 +222,15 @@ tr:hover td{background:rgba(59,130,246,.04)}
     </div>
   </div>
 
+  <!-- Tab Navigation -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('alerts')">🔥 妖币告警</div>
+    <div class="tab" onclick="switchTab('tracking')">📊 告警验证</div>
+    <div class="tab" onclick="switchTab('learning')">🧠 系统学习</div>
+  </div>
+
+  <!-- Tab: Alerts -->
+  <div class="tab-content active" id="tab-alerts">
   <!-- Alerts Section -->
   <div class="section">
     <div class="section-header">
@@ -229,6 +299,71 @@ tr:hover td{background:rgba(59,130,246,.04)}
       </table>
     </div>
   </div>
+  </div><!-- end tab-alerts -->
+
+  <!-- Tab: Tracking -->
+  <div class="tab-content" id="tab-tracking">
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">📊 告警事后验证</div>
+        <div class="filter-bar">
+          <select class="btn" id="trackStatusFilter" onchange="renderTracking()">
+            <option value="">全部状态</option>
+            <option value="complete">已完成</option>
+            <option value="partial">部分完成</option>
+            <option value="pending">待追踪</option>
+          </select>
+        </div>
+      </div>
+      <div class="learn-grid" id="trackingStats"></div>
+      <div id="trackingContainer">
+        <div class="empty-state" style="padding:30px">加载中...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Learning -->
+  <div class="tab-content" id="tab-learning">
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">🧠 系统学习状态</div>
+      </div>
+      <div class="learn-grid" id="learningStats"></div>
+    </div>
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">🧟 僵尸代币衰减列表</div>
+      </div>
+      <div class="decay-list" id="decayList">
+        <div class="empty-state" style="padding:20px">暂无衰减代币</div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">⚖️ 维度权重调整</div>
+      </div>
+      <div id="weightAdjustments">
+        <div class="empty-state" style="padding:20px">暂无权重调整 (需要至少30条完成记录)</div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">🕐 时段表现分析</div>
+      </div>
+      <div id="hourlyChart">
+        <div class="empty-state" style="padding:20px">暂无数据</div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">🔥 过热模式</div>
+      </div>
+      <div id="overheatInfo">
+        <div class="empty-state" style="padding:20px">暂未识别到过热模式</div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- Toast container -->
@@ -240,6 +375,9 @@ let allAlerts = [];
 let latestScan = null;
 let status = {};
 let eventSource = null;
+let trackingData = null;
+let learningData = null;
+let marketCtx = null;
 
 // ===== SSE Connection =====
 // ===== SSE Connection (local) / Polling (Vercel) =====
@@ -309,6 +447,7 @@ function handleSSEMessage(msg) {
       document.getElementById('scanStatus').textContent =
         `上次扫描: ${msg.data.alertCount}个告警, 耗时${(msg.data.duration/1000).toFixed(1)}s`;
       document.getElementById('scanBtn').disabled = false;
+      if (msg.data.marketContext) updateMarketContext(msg.data.marketContext);
       // Show toast for new alerts
       if (msg.data.alertCount > 0) {
         showToast(`发现 ${msg.data.alertCount} 个妖币信号!`, 'alert-toast');
@@ -330,7 +469,7 @@ function handleSSEMessage(msg) {
 
 // ===== API Calls =====
 async function fetchAll() {
-  await Promise.all([fetchStatus(), fetchAlerts(), fetchLatest()]);
+  await Promise.all([fetchStatus(), fetchAlerts(), fetchLatest(), fetchMarket()]);
 }
 
 async function fetchStatus() {
@@ -587,6 +726,222 @@ function showToast(msg, cls = '') {
 // ===== Init =====
 connectSSE();
 fetchAll();
+
+// ===== Market Context =====
+async function fetchMarket() {
+  try {
+    const res = await fetch('/api/market');
+    const json = await res.json();
+    if (json.ok && json.data) updateMarketContext(json.data);
+  } catch {}
+}
+
+function updateMarketContext(ctx) {
+  if (!ctx) return;
+  marketCtx = ctx;
+  const bar = document.getElementById('marketBar');
+  if (ctx.btc || ctx.eth) bar.style.display = 'flex';
+  if (ctx.btc) {
+    document.getElementById('btcPrice').textContent = '$' + formatNum(ctx.btc.price);
+    const bc = ctx.btc.change24hPct;
+    const bcEl = document.getElementById('btcChange');
+    bcEl.textContent = (bc >= 0 ? '+' : '') + bc.toFixed(2) + '%';
+    bcEl.className = 'change ' + (bc >= 0 ? 'up' : 'down');
+  }
+  if (ctx.eth) {
+    document.getElementById('ethPrice').textContent = '$' + formatNum(ctx.eth.price);
+    const ec = ctx.eth.change24hPct;
+    const ecEl = document.getElementById('ethChange');
+    ecEl.textContent = (ec >= 0 ? '+' : '') + ec.toFixed(2) + '%';
+    ecEl.className = 'change ' + (ec >= 0 ? 'up' : 'down');
+  }
+  // 市场摘要
+  const btcChg = ctx.btc?.change24hPct || 0;
+  const ethChg = ctx.eth?.change24hPct || 0;
+  let summary = '';
+  if (btcChg > 3 && ethChg > 3) summary = '🚀 大盘强势，山寨币可能跟涨';
+  else if (btcChg > 0 && ethChg > 0) summary = '↗️ 横盘微涨，资金轮动迹象';
+  else if (btcChg < -3) summary = '⚠️ 大盘回调，山寨币风险较高';
+  else if (btcChg < 0) summary = '↘️ 大盘偏弱，谨慎操作';
+  document.getElementById('marketSummary').textContent = summary;
+}
+
+// ===== Tab Switching =====
+function switchTab(tabName) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('tab-' + tabName).classList.add('active');
+  if (tabName === 'tracking') fetchTracking();
+  if (tabName === 'learning') fetchLearning();
+}
+
+// ===== Tracking =====
+async function fetchTracking() {
+  try {
+    const res = await fetch('/api/tracking?limit=100');
+    const json = await res.json();
+    if (json.ok) {
+      trackingData = json;
+      renderTrackingStats(json.stats);
+      renderTracking();
+    }
+  } catch {}
+}
+
+function renderTrackingStats(stats) {
+  if (!stats) return;
+  const el = document.getElementById('trackingStats');
+  el.innerHTML = `
+    <div class="learn-card"><div class="label">总追踪</div><div class="value">${stats.total || 0}</div></div>
+    <div class="learn-card"><div class="label">已完成</div><div class="value">${stats.complete || 0}</div></div>
+    <div class="learn-card"><div class="label">待检查</div><div class="value">${stats.pending || 0}</div></div>
+    <div class="learn-card"><div class="label">平均24h回报</div><div class="value ${stats.avgReturn24h > 0 ? 'positive' : stats.avgReturn24h < 0 ? 'negative' : ''}">${stats.avgReturn24h != null ? stats.avgReturn24h.toFixed(2) + '%' : '--'}</div></div>
+  `;
+}
+
+function renderTracking() {
+  if (!trackingData) return;
+  const container = document.getElementById('trackingContainer');
+  const statusFilter = document.getElementById('trackStatusFilter').value;
+  let records = trackingData.data || [];
+  if (statusFilter) records = records.filter(r => r.status === statusFilter);
+
+  if (records.length === 0) {
+    container.innerHTML = '<div class="empty-state" style="padding:30px">暂无追踪记录</div>';
+    return;
+  }
+
+  container.innerHTML = records.slice(0, 50).map(r => {
+    const rb = (val, label) => {
+      if (val == null) return `<span class="return-badge pending">${label}: 待检</span>`;
+      const cls = val > 0 ? 'positive' : val < 0 ? 'negative' : 'pending';
+      return `<span class="return-badge ${cls}">${label}: ${val > 0 ? '+' : ''}${val.toFixed(2)}%</span>`;
+    };
+    const statusLabel = r.status === 'complete' ? '✅' : r.status === 'partial' ? '⏳' : '⌛';
+    return `
+      <div class="track-card">
+        <div class="track-symbol">${statusLabel} ${r.symbol}</div>
+        <div style="font-size:12px;color:var(--muted)">评分 ${r.totalScore?.toFixed(1) || '--'} | ${r.direction || '--'} | $${r.p0 ? formatNum(r.p0) : '--'}</div>
+        <div class="track-returns">
+          ${rb(r.return1h, '1h')}
+          ${rb(r.return4h, '4h')}
+          ${rb(r.return24h, '24h')}
+        </div>
+        <div style="font-size:11px;color:var(--muted)">${timeAgo(r.alertTime)}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ===== Learning =====
+async function fetchLearning() {
+  try {
+    const res = await fetch('/api/learning');
+    const json = await res.json();
+    if (json.ok) {
+      learningData = json.data;
+      renderLearning();
+    }
+  } catch {}
+}
+
+function renderLearning() {
+  const d = learningData;
+  if (!d) return;
+
+  // Stats overview
+  const statsEl = document.getElementById('learningStats');
+  const s = d.stats || {};
+  statsEl.innerHTML = `
+    <div class="learn-card"><div class="label">学习次数</div><div class="value">${d.learnCount || 0}</div></div>
+    <div class="learn-card"><div class="label">已完成追踪</div><div class="value">${d.totalCompleted || 0}</div></div>
+    <div class="learn-card"><div class="label">24h平均回报</div><div class="value ${s.avgReturn24h > 0 ? 'positive' : s.avgReturn24h < 0 ? 'negative' : ''}">${s.avgReturn24h != null ? s.avgReturn24h.toFixed(2) + '%' : '--'}</div></div>
+    <div class="learn-card"><div class="label">命中率</div><div class="value">${s.hitRate != null ? (s.hitRate * 100).toFixed(0) + '%' : '--'}</div></div>
+    <div class="learn-card"><div class="label">1h平均回报</div><div class="value ${s.avgReturn1h > 0 ? 'positive' : s.avgReturn1h < 0 ? 'negative' : ''}">${s.avgReturn1h != null ? s.avgReturn1h.toFixed(2) + '%' : '--'}</div></div>
+    <div class="learn-card"><div class="label">4h平均回报</div><div class="value ${s.avgReturn4h > 0 ? 'positive' : s.avgReturn4h < 0 ? 'negative' : ''}">${s.avgReturn4h != null ? s.avgReturn4h.toFixed(2) + '%' : '--'}</div></div>
+  `;
+
+  // Decay list
+  const decayEl = document.getElementById('decayList');
+  const decays = Object.entries(d.decayFactors || {});
+  if (decays.length > 0) {
+    decayEl.innerHTML = decays.map(([sym, info]) => {
+      const cls = info.factor <= 0.1 ? 'severe' : info.factor <= 0.4 ? 'moderate' : 'mild';
+      return `
+        <div class="decay-item">
+          <div><strong>${sym}</strong> <span style="color:var(--muted);font-size:12px">${info.reason || ''}</span></div>
+          <span class="decay-factor ${cls}">衰减 ${info.factor}x</span>
+        </div>
+      `;
+    }).join('');
+  } else {
+    decayEl.innerHTML = '<div class="empty-state" style="padding:20px">暂无僵尸代币 — 系统运行良好</div>';
+  }
+
+  // Weight adjustments
+  const wEl = document.getElementById('weightAdjustments');
+  const adj = Object.entries(d.weightAdjustments || {});
+  const dimNames = { newsHeat: '新闻热度', socialHeat: '社交热度', priceAction: '价格异动', volumeSpike: '成交量', contractData: '合约数据', onChain: '链上活跃', sentiment: '情绪指标' };
+  const baseW = { newsHeat: 0.15, socialHeat: 0.20, priceAction: 0.15, volumeSpike: 0.15, contractData: 0.15, onChain: 0.10, sentiment: 0.10 };
+  if (adj.length > 0) {
+    wEl.innerHTML = '<div style="display:flex;flex-direction:column;gap:8px">' + adj.map(([dim, info]) => {
+      const base = baseW[dim] || 0;
+      const delta = typeof info === 'number' ? info : (info.delta || 0);
+      const corr = typeof info === 'object' ? info.correlation : null;
+      const arrow = delta > 0 ? '↑' : '↓';
+      const color = delta > 0 ? 'var(--green)' : 'var(--red)';
+      const isNeg = (base + delta) < 0;
+      return `<div class="decay-item">
+        <div><strong>${dimNames[dim] || dim}</strong> <span style="color:var(--muted);font-size:12px">基础 ${(base*100).toFixed(0)}%${corr != null ? ' | r=' + corr : ''}</span>${isNeg ? ' <span style="background:rgba(239,68,68,.2);color:var(--red);padding:1px 6px;border-radius:4px;font-size:11px">减分项</span>' : ''}</div>
+        <span style="color:${color};font-weight:700">${arrow} ${delta > 0 ? '+' : ''}${(delta*100).toFixed(1)}%</span>
+      </div>`;
+    }).join('') + '</div>';
+  }
+
+  // Hourly chart
+  const hEl = document.getElementById('hourlyChart');
+  const hs = s.hourlyStats || {};
+  const hours = Object.keys(hs);
+  if (hours.length > 0) {
+    const maxCount = Math.max(...Object.values(hs).map(h => h.count), 1);
+    const maxAvg = Math.max(...Object.values(hs).map(h => Math.abs(h.avgReturn || 0)), 1);
+    let html = '<div class="hour-bar">';
+    for (let h = 0; h < 24; h++) {
+      const data = hs[h] || { count: 0, avgReturn: 0, hitRate: 0 };
+      const height = data.count > 0 ? Math.max(5, (data.count / maxCount) * 80) : 2;
+      const color = data.avgReturn > 0 ? 'var(--green)' : data.avgReturn < 0 ? 'var(--red)' : '#334155';
+      const best = (s.bestHours || []).includes(h) ? 'border:1px solid var(--accent);' : '';
+      html += `<div class="hour-col" title="${h}时: ${data.count}次, 平均${data.avgReturn?.toFixed(1) || 0}%, 命中${(data.hitRate*100||0).toFixed(0)}%">
+        <div class="bar" style="height:${height}px;background:${color};${best}"></div>
+        <div class="lbl">${h}</div>
+      </div>`;
+    }
+    html += '</div>';
+    if (s.bestHours?.length) {
+      html += `<div style="margin-top:8px;font-size:12px;color:var(--muted)">最佳时段: ${s.bestHours.map(h => h + ':00').join(', ')}</div>`;
+    }
+    hEl.innerHTML = html;
+  }
+
+  // Overheat patterns
+  const ohEl = document.getElementById('overheatInfo');
+  const oh = d.overheatPatterns || {};
+  if (oh.confidence > 0 && oh.sampleCount > 0) {
+    ohEl.innerHTML = `
+      <div class="card" style="padding:16px">
+        <div style="margin-bottom:8px">置信度: <strong style="color:${oh.confidence > 0.5 ? 'var(--green)' : 'var(--yellow)'}">${(oh.confidence*100).toFixed(0)}%</strong> (基于 ${oh.sampleCount} 个样本)</div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px">
+          <div>最低涨幅: <strong>${oh.minChange24h || '--'}%</strong></div>
+          <div>最低费率: <strong>${oh.minFundingRate ? (oh.minFundingRate*100).toFixed(3) + '%' : '--'}</strong></div>
+          <div>最低社交分: <strong>${oh.minSocialScore || '--'}</strong></div>
+          ${oh.avgDrop ? `<div>平均跌幅: <strong class="negative">${oh.avgDrop.toFixed(1)}%</strong></div>` : ''}
+        </div>
+        <div style="margin-top:8px;font-size:12px;color:var(--muted)">当代币同时满足以上条件时，系统会自动增加做空信号分数</div>
+      </div>
+    `;
+  }
+}
 </script>
 </body>
 </html>

@@ -12,6 +12,8 @@ const express = require('express');
 const path = require('path');
 const store = require('./lib/store');
 const scanner = require('./lib/scanner');
+const tracker = require('./lib/tracker');
+const learner = require('./lib/learner');
 
 const PORT = process.env.PORT || 3000;
 const app = express();
@@ -69,6 +71,30 @@ app.get('/api/latest', (req, res) => {
 app.get('/api/logs', (req, res) => {
   const logs = store.getScanLogs();
   res.json({ ok: true, data: logs });
+});
+
+// 追踪记录
+app.get('/api/tracking', (req, res) => {
+  const { status, symbol, limit } = req.query;
+  const records = tracker.getTracking({
+    status,
+    symbol,
+    limit: limit ? parseInt(limit) : 100,
+  });
+  const stats = tracker.getTrackingStats();
+  res.json({ ok: true, data: records, stats, total: records.length });
+});
+
+// 学习参数
+app.get('/api/learning', (req, res) => {
+  const params = learner.getParams();
+  res.json({ ok: true, data: params });
+});
+
+// 大盘背景
+app.get('/api/market', (req, res) => {
+  const ctx = store.getMarketContext();
+  res.json({ ok: true, data: ctx });
 });
 
 // 手动触发扫描

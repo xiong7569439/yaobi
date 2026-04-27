@@ -297,6 +297,9 @@ async function fullScan() {
   results.importantNews = importantNews.status === 'fulfilled' ? importantNews.value : null;
   results.sentimentRank = sentimentRank.status === 'fulfilled' ? sentimentRank.value : null;
 
+  // 大盘背景 — BTC/ETH 行情
+  results.marketContext = extractMarketContext(tickers);
+
   console.log('[OKX-HTTP] 扫描完成', {
     topGainers: results.topGainers?.length || 0,
     topVolume: results.topVolume?.length || 0,
@@ -306,6 +309,26 @@ async function fullScan() {
     sentimentRank: Array.isArray(results.sentimentRank) ? results.sentimentRank.length : 0,
   });
   return results;
+}
+
+function extractMarketContext(spotTickers) {
+  const ctx = { btc: null, eth: null, timestamp: Date.now() };
+  if (!spotTickers || !Array.isArray(spotTickers)) return ctx;
+  for (const t of spotTickers) {
+    const id = t.instId;
+    if (id === 'BTC-USDT' || id === 'ETH-USDT') {
+      const last = parseFloat(t.last);
+      const open = parseFloat(t.open24h);
+      const high = parseFloat(t.high24h);
+      const low = parseFloat(t.low24h);
+      const vol = parseFloat(t.volCcy24h || t.vol24h || 0);
+      const change = open > 0 ? ((last - open) / open) * 100 : 0;
+      const entry = { price: last, change24hPct: Math.round(change * 100) / 100, high24h: high, low24h: low, vol24h: vol };
+      if (id === 'BTC-USDT') ctx.btc = entry;
+      else ctx.eth = entry;
+    }
+  }
+  return ctx;
 }
 
 module.exports = { fullScan, getSpotTickers, getSwapTickers, getOpenInterest, getNews, getOiChanges };
