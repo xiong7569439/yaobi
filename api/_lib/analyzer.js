@@ -18,6 +18,8 @@
  */
 
 const learner = require('./learner');
+const sceneLib = require('./scene');
+const memory = require('./memory');
 
 const WEIGHTS = {
   newsHeat:     0.15,
@@ -75,9 +77,10 @@ function calcScore(value, low, mid, high) {
 /**
  * 分析单个代币的妖币特征
  * @param {Object} tokenData - 代币的各维度数据
+ * @param {Object} [marketContext] - 大盘背景, 用于场景标签
  * @returns {Object} 评分结果
  */
-function analyzeToken(tokenData) {
+function analyzeToken(tokenData, marketContext = null) {
   const { symbol, instId } = tokenData;
   const scores = {};
   const reasons = [];
@@ -164,6 +167,7 @@ function analyzeToken(tokenData) {
   if ((tokenData.socialScore || 0) > 40) { longPoints += 15; dirReasons.push('社交关注'); }
 
   // --- 回调入场做多 (pullback buy) ---
+  // 价格小幅回调 + 情绪/新闻正面 + 费率不高 + OI未崩 = 跌着等你上车
   if (rawChange >= -10 && rawChange <= -1) {
     let pullbackPoints = 0;
     const pullbackReasons = [];
@@ -217,6 +221,75 @@ function analyzeToken(tokenData) {
     dirReasons.push('信号不明确');
   }
 
+  // ===== 场景化标签 + 硬规则拦截 + 经验库置信度调整 =====
+  const snapshotScene = sceneLib.tagSnapshot({
+    change24hPct: rawChange,
+    fundingRate: rawFundingRate,
+    oiChangePct: rawOiChange,
+    volumeMultiplier: tokenData.volumeMultiplier,
+    marketContext,
+  });
+
+  // --- P0 硬规则: 防追高 ---
+  const origDirection = direction;
+  if (direction === 'long') {
+    if (snapshotScene.priceStage === 'blowoff') {
+      // 暴涨尾声 (>100%) - 强制翻转或观望
+      if (shortPoints >= 20) {
+        direction = 'short';
+        directionScore = Math.min(100, shortPoints + 15);
+        dirReasons.length = 0;
+        dirReasons.push('暴涨尾声翻转', ...shortReasons);
+      } else {
+        direction = 'neutral';
+        directionScore = 30;
+        dirReasons.length = 0;
+        dirReasons.push('暴涨尾声禁买');
+      }
+      reasons.push('P0拦截:尾声禁long');
+    } else if (snapshotScene.priceStage === 'tail') {
+      // 尾部 (50%~100%) - 不强制翻转, 但格外小心
+      if (snapshotScene.fundingRegime === 'fr_extreme_high' || snapshotScene.fundingRegime === 'fr_high') {
+        direction = 'neutral';
+        directionScore = 25;
+        dirReasons.length = 0;
+        dirReasons.push('尾部+费率过热禁买');
+        reasons.push('P0拦截:尾部过热');
+      } else {
+        // 保留 long 但打折
+        directionScore = Math.round(directionScore * 0.7);
+        dirReasons.push('尾部取胜率低');
+      }
+    } else if (snapshotScene.priceStage === 'ignition' && snapshotScene.fundingRegime === 'fr_extreme_high') {
+      // 启动期 + 费率极高 = 多头已拥挤
+      direction = 'neutral';
+      directionScore = 20;
+      dirReasons.length = 0;
+      dirReasons.push('启动期+费率极高 不碰');
+      reasons.push('P0拦截:拥挤');
+    }
+  }
+
+  // --- P1 经验库置信度调整 ---
+  let sceneAdvice = null;
+  if (direction === 'long' || direction === 'short') {
+    try {
+      sceneAdvice = memory.sceneAdvice(snapshotScene, direction);
+      if (sceneAdvice && sceneAdvice.note) {
+        directionScore = Math.min(100, Math.max(0, Math.round(directionScore * sceneAdvice.multiplier)));
+        totalScore = Math.round(totalScore * Math.max(0.6, Math.min(1.2, sceneAdvice.multiplier)) * 100) / 100;
+        dirReasons.push(`经验库:${sceneAdvice.note}`);
+        // 如果经验库表明确实不利 (multiplier<=0.5), 转为 neutral
+        if (sceneAdvice.multiplier <= 0.5) {
+          direction = 'neutral';
+          dirReasons.unshift('经验库否决');
+        }
+      }
+    } catch (e) {
+      // 经验库查询失败不影响主流程
+    }
+  }
+
   // 应用僵尸衰减因子
   const decayFactor = learner.getDecayFactor(symbol, tokenData._alertCount || 0);
   if (decayFactor !== 1.0) {
@@ -241,9 +314,16 @@ function analyzeToken(tokenData) {
     directionReasons: dirReasons,
     scores,
     reasons,
+    scene: snapshotScene, // 场景标签
+    sceneAdvice: sceneAdvice ? {
+      multiplier: sceneAdvice.multiplier,
+      sample: sceneAdvice.sample,
+      note: sceneAdvice.note,
+    } : null,
     last: tokenData.last,
     change24hPct: tokenData.change24hPct,
     vol24h: tokenData.vol24h,
+    volumeMultiplier: tokenData.volumeMultiplier || null,
     fundingRate: tokenData.fundingRate,
     oiChangePct: tokenData.oiChangePct,
     timestamp: Date.now(),
@@ -275,10 +355,11 @@ function analyze(okxData) {
       if (!sym) continue;
       if (!tokenMap.has(sym)) tokenMap.set(sym, { symbol: sym, instId: t.instId });
       const data = tokenMap.get(sym);
+      // 优先保留 USDT 交易对信息
       if (t.instId.includes('-USDT')) data.instId = t.instId;
       data.last = t.last;
       data.change24hPct = t.change24hPct;
-      data.vol24h = Math.max(data.vol24h || 0, t.vol24h);
+      data.vol24h = Math.max(data.vol24h || 0, t.vol24h); // 取最大成交量
       data.open24h = t.open24h;
     }
   }
@@ -414,7 +495,7 @@ function analyze(okxData) {
     if (MAINSTREAM_COINS.has(sym)) continue;
     if (sym.length < 2 || sym.length > 15) continue;
     if (sym.includes(' ') || sym.includes("'")) continue; // 过滤非代币符号
-    const result = analyzeToken(tokenData);
+    const result = analyzeToken(tokenData, marketContext);
     if (result.totalScore > 0) {
       results.push(result);
     }

@@ -18,6 +18,10 @@ module.exports = async function handler(req, res) {
     const result = analyzer.analyze(okxData);
 
     store.setLatestScan(result);
+
+    // 标记降温告警
+    store.markCooledAlerts(result.allScores);
+
     if (result.alerts.length > 0) {
       store.addAlerts(result.alerts);
       for (const alert of result.alerts) {

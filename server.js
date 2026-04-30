@@ -15,7 +15,7 @@ const scanner = require('./lib/scanner');
 const tracker = require('./lib/tracker');
 const learner = require('./lib/learner');
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 47329;
 const app = express();
 
 // 静态文件
@@ -123,6 +123,63 @@ app.post('/api/scan', async (req, res) => {
   } catch (err) {
     res.status(500).json({ ok: false, message: err.message });
   }
+});
+
+// 手动触发复盘 (立即跑一次 runReview)
+app.post('/api/review', async (req, res) => {
+  try {
+    const force = req.query.force === '1' || req.query.force === 'true';
+    const startTime = Date.now();
+    await scanner.runPeriodicReview();
+    const { lastReviewTime, lastReviewResult } = scanner.getLastReview();
+    res.json({
+      ok: true,
+      duration: Date.now() - startTime,
+      lastReviewTime,
+      result: lastReviewResult,
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+// 查询经验库
+app.get('/api/experience', (req, res) => {
+  try {
+    const memory = require('./lib/memory');
+    const { limit, tag, stage, outcome } = req.query;
+    let lessons = memory.loadLessons();
+    if (tag) lessons = lessons.filter(l => (l.tags || []).includes(tag));
+    if (stage) lessons = lessons.filter(l => l.scene?.priceStage === stage);
+    if (outcome) lessons = lessons.filter(l => l.outcome === outcome);
+    const summary = {
+      total: lessons.length,
+      wins: lessons.filter(l => l.outcome === 'win').length,
+      losses: lessons.filter(l => l.outcome === 'loss').length,
+      byStage: memory.summaryByStage(),
+    };
+    const n = limit ? parseInt(limit) : 50;
+    res.json({ ok: true, data: lessons.slice(0, n), total: lessons.length, summary });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
+// 调度器状态 (查看上次复盘时间等)
+app.get('/api/scheduler', (req, res) => {
+  const { lastReviewTime, lastReviewResult } = scanner.getLastReview();
+  res.json({
+    ok: true,
+    data: {
+      scanInterval: scanner.SCAN_INTERVAL,
+      pendingCheckInterval: scanner.PENDING_CHECK_INTERVAL,
+      reviewInterval: scanner.REVIEW_INTERVAL,
+      nextScanTime: scanner.getNextScanTime(),
+      lastReviewTime,
+      lastReviewResult,
+      nextReviewTime: lastReviewTime ? lastReviewTime + scanner.REVIEW_INTERVAL : null,
+    },
+  });
 });
 
 // ============ 启动 ============

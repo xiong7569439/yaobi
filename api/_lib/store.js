@@ -90,4 +90,35 @@ function getAlertCounts() {
 function setMarketContext(ctx) { writeJSON(MARKET_FILE, ctx); }
 function getMarketContext() { return readJSON(MARKET_FILE); }
 
-module.exports = { getAlerts, addAlerts, getLatestScan, setLatestScan, getStatus, updateStatus, incrementAlertCount, getAlertCount, getAlertCounts, setMarketContext, getMarketContext };
+/**
+ * 标记降温告警 — 对比最新扫描分数，如果跌出阈值则标记
+ */
+function markCooledAlerts(currentScores, threshold = 40) {
+  if (!currentScores || currentScores.length === 0) return;
+  const alerts = getAlerts();
+  if (alerts.length === 0) return;
+
+  const scoreMap = new Map();
+  for (const s of currentScores) scoreMap.set(s.symbol, s.totalScore);
+
+  let changed = false;
+  for (const alert of alerts) {
+    const currentScore = scoreMap.get(alert.symbol);
+    if (currentScore !== undefined) {
+      if (currentScore < threshold && !alert.cooledDown) {
+        alert.cooledDown = true;
+        alert.currentScore = Math.round(currentScore * 100) / 100;
+        alert.cooledAt = Date.now();
+        changed = true;
+      } else if (currentScore >= threshold && alert.cooledDown) {
+        delete alert.cooledDown;
+        delete alert.currentScore;
+        delete alert.cooledAt;
+        changed = true;
+      }
+    }
+  }
+  if (changed) writeJSON(ALERTS_FILE, alerts);
+}
+
+module.exports = { getAlerts, addAlerts, getLatestScan, setLatestScan, getStatus, updateStatus, incrementAlertCount, getAlertCount, getAlertCounts, setMarketContext, getMarketContext, markCooledAlerts };

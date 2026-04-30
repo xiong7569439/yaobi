@@ -49,6 +49,9 @@ a{color:var(--accent);text-decoration:none}
 .alert-card.high{border-left-color:var(--red);background:linear-gradient(90deg,rgba(239,68,68,.08),transparent)}
 .alert-card.medium{border-left-color:var(--orange);background:linear-gradient(90deg,rgba(249,115,22,.06),transparent)}
 .alert-card.low{border-left-color:var(--yellow);background:linear-gradient(90deg,rgba(245,158,11,.04),transparent)}
+.alert-card.cooled{border-left-color:#475569;background:rgba(71,85,105,.08);opacity:.65}
+.alert-card.cooled .alert-score{color:#475569}
+.alert-card.cooled .alert-symbol{color:#94a3b8}
 .alert-card.new{animation:slideIn .4s ease-out}
 @keyframes slideIn{from{transform:translateX(-20px);opacity:0}to{transform:translateX(0);opacity:1}}
 .alert-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
@@ -571,17 +574,21 @@ function renderAlerts() {
     return;
   }
 
-  container.innerHTML = filtered.slice(0, 50).map(a => `
-    <div class="alert-card ${a.level}">
+  container.innerHTML = filtered.slice(0, 50).map(a => {
+    const isCooled = a.cooledDown;
+    const cardClass = isCooled ? 'cooled' : a.level;
+    return `
+    <div class="alert-card ${cardClass}">
       <div class="alert-header">
         <div class="alert-symbol">
-          <span class="badge ${a.level}">${a.level === 'high' ? '🔴 高' : a.level === 'medium' ? '🟠 中' : '🟡 低'}</span>
+          ${isCooled ? '<span class="badge" style="background:rgba(71,85,105,.3);color:#94a3b8">❄️ 已降温</span>' : `<span class="badge ${a.level}">${a.level === 'high' ? '🔴 高' : a.level === 'medium' ? '🟠 中' : '🟡 低'}</span>`}
           ${dirBadge(a.direction, a.directionScore)}
           ${a.symbol}
           ${a.alertCount > 1 ? `<span style="font-size:11px;background:rgba(59,130,246,.2);color:var(--accent);padding:2px 6px;border-radius:4px">已提醒${a.alertCount}次</span>` : ''}
+          ${isCooled ? `<span style="font-size:11px;color:#94a3b8">${a.totalScore.toFixed(1)}→${a.currentScore}</span>` : ''}
           ${a.instId ? `<span style="font-size:12px;color:var(--muted)">${a.instId}</span>` : ''}
         </div>
-        <div class="alert-score ${a.level}">${a.totalScore.toFixed(1)}</div>
+        <div class="alert-score ${cardClass}">${isCooled ? a.currentScore : a.totalScore.toFixed(1)}</div>
       </div>
       <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
         ${a.last ? `<span class="alert-price">$${formatNum(a.last)}</span>` : ''}
@@ -594,9 +601,9 @@ function renderAlerts() {
         ${(a.reasons || []).map(r => `<span class="reason-tag">${r}</span>`).join('')}
       </div>
       ${renderScoreBars(a.scores)}
-      <div class="alert-time">${timeAgo(a.createdAt || a.timestamp)}</div>
+      <div class="alert-time">${timeAgo(a.createdAt || a.timestamp)}${isCooled ? ' · 降温于' + timeAgo(a.cooledAt) : ''}</div>
     </div>
-  `).join('');
+  `}).join('');
 }
 
 function renderScoreBars(scores) {

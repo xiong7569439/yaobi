@@ -2,6 +2,8 @@
 
 基于 **OKX Agent Trade Kit** 的加密货币异动监控系统。每 5 分钟自动扫描市场行情、新闻舆情、合约持仓和社交情绪数据，通过 **7 维特征评分引擎** 发现潜在"妖币"，并支持 **做多/做空方向判断**、**提醒次数追踪**、**告警自进化学习** 和 **大盘背景分析**，在 Web 仪表盘实时推送告警。
 
+> 🎯 v2 增强：在原有统计学学习基础上，引入 **Hermes 式决策闭环** — 场景标签化 + 硬规则拦截追高 + 经验库调取 + 定时自动复盘，让妖币筛选从"看对过"进化为"吃一切长一智"。
+
 ## 📸 预览
 
 线上地址：[https://cryptocurrency-beryl-zeta.vercel.app](https://cryptocurrency-beryl-zeta.vercel.app)
@@ -22,6 +24,11 @@
 - **权重反转**：成交量等强负相关维度（r < -0.5）自动反转为减分项
 - **回调入场**：价格小幅回调 + 情绪/新闻正面 → 识别「跌着等你上车」机会
 - **过热模式**：学习做多后暴跌的模式特征，自动增加做空信号
+- **场景标签化** 🆕：每条告警自动打 5 维标签（价格阶段 / 大盘状态 / 费率区间 / 成交量区间 / OI 区间），组成 `sceneKey`
+- **P0 硬规则拦截** 🆕：暴涨尾声/尾部过热/启动期拥挤 → 强制转为观望或反操，从源头防追高
+- **P1 经验库检索** 🆕：基于 Jaccard 场景相似度查历史胜率，自动放大/缩小置信度（0.5x～1.3x）
+- **P2 定时复盘** 🆕：每 4h 自动跑规则式复盘，把完成的追踪沉淀为带教训标签的经验条目
+- **独立 pending 检查** 🆕：每 2 分钟独立回收 1h/4h/24h 价格，不受扫描卡顿影响
 - **Web 仪表盘**：暗色主题，告警卡片、告警验证、系统学习、7 维条形图
 - **双模式部署**：本地 Node.js 长驻服务 + Vercel Serverless 无缝切换
 
@@ -154,6 +161,58 @@
 - 否则标记为 **观望**（信号不明确）
 - 前端以 🟢做多 / 🔴做空 / ➖观望 标签展示，附置信度百分比
 
+## 🧭 Hermes 式决策闭环
+
+对标 Hermes / MAKIMA 自学习 Agent 方法论，系统实现四步闭环，让每一次告警都成为未来决策的教材：
+
+```
+  ① 决策留痕 → ② 24h 回访 → ③ AI 复盘 → ④ 经验调取 → ① ...
+  (tracker)    (checkPending)  (review.js)   (memory.js)
+```
+
+| 步骤 | 实现模块 | 触发时机 | 产出 |
+|------|---------|---------|------|
+| ① 决策留痕 | [lib/tracker.js](lib/tracker.js) | 每次告警产生 | 告警快照 + `scene` 标签 + `marketSnapshot` |
+| ② 24h 回访 | [lib/tracker.js](lib/tracker.js) (`checkPending`) | 2 min 独立检查 | `return1h/4h/24h` 回报率 |
+| ③ AI 复盘 | [scripts/review.js](scripts/review.js) | 4h 自动 + 手动触发 | `data/experience.json` (rootCause/ignoredSignals/lesson/tags) |
+| ④ 经验调取 | [lib/memory.js](lib/memory.js) | 每次评分时 | `sceneAdvice.multiplier` (0.5～1.3x 调整置信度) |
+
+### 场景标签体系 ([lib/scene.js](lib/scene.js))
+
+| 维度 | 取值 |
+|------|------|
+| **priceStage** (价格阶段) | `crash` 暴跌 / `pullback` 回调 / `ambush` 埋伏 / `ignition` 启动 / `rally` 上涨中 / `tail` 尾部 / `blowoff` 暴涨尾声 |
+| **marketScene** (大盘) | `btc_strong_up` / `btc_up` / `neutral` / `btc_down` / `btc_strong_down` |
+| **fundingRegime** (费率) | `fr_negative` / `fr_low` / `fr_healthy` / `fr_high` / `fr_extreme_high` |
+| **volumeRegime** (成交量) | `vol_dry` / `vol_normal` / `vol_active` / `vol_spike` / `vol_explosive` |
+| **oiRegime** (持仓) | `oi_plunge` / `oi_decline` / `oi_stable` / `oi_building` / `oi_surge` |
+
+五维组合成 `sceneKey`，例如：`btc_down|crash|fr_negative|oi_stable`
+
+### P0 硬规则拦截
+
+| 场景 | 原方向 | 拦截后 | 原因 |
+|------|--------|--------|------|
+| `blowoff` (>100%) + long | long | short 或 neutral | 暴涨尾声禁买 |
+| `tail` + 费率过热 | long | neutral | 尾部拥挤停手 |
+| `tail` + 费率健康 | long | long(×0.7) | 保留但打折 |
+| `ignition` + `fr_extreme_high` | long | neutral | 多头已极度拥挤 |
+
+### P1 经验库置信度调整
+
+- `sceneSimilarity(a, b)` Jaccard 匹配，返回 Top-K 相似案例
+- `sceneAdvice(scene, direction)` 查同场景同方向历史胜率→输出乘数
+  - 胜率 ≥70% + 均值 +5% → **1.3x** (信心加强)
+  - 胜率 ≤ 30% + 均值 -3% → **0.5x** (直接降为 neutral)
+  - 样本 < 3 → **1.0x** (不干预)
+
+### P2 定时复盘
+
+- 规则式复盘默认开启，每 4h 自动跑一次
+- LLM 开关预留：设置 `ANTHROPIC_API_KEY` 后可启用语义级复盘
+- 自动归因标签：`chased_top` / `funding_squeeze` / `oi_overheated` / `caught_bottom` / `shorted_bottom` / `correctly_avoided` …
+- 产出 `data/experience.json` 精炼经验 + `data/review-report.txt` 人读报告
+
 ## 🧠 告警自进化系统
 
 系统通过**追踪 → 验证 → 学习 → 反馈**闭环，自动优化评分引擎。
@@ -201,33 +260,35 @@ cryptocurrency/
 │
 ├── lib/                   # 本地模式核心模块
 │   ├── okx-fetcher.js     # OKX CLI 数据获取 + 大盘背景提取
-│   ├── analyzer.js        # 妖币特征评分引擎 + 方向判断 + 回调入场
-│   ├── scanner.js         # 定时扫描调度器 + 追踪/学习调度
+│   ├── analyzer.js        # 评分引擎 + 方向判断 + P0拦截 + P1经验库
+│   ├── scanner.js         # 定时扫描(5min) + pending检查(2min) + 定时复盘(4h)
 │   ├── store.js           # 内存 + JSON 持久化 + SSE 广播 + 大盘缓存
-│   ├── tracker.js         # 价格追踪模块（1h/4h/24h 回报验证）
-│   └── learner.js         # 反馈学习引擎（僵尸/权重/过热/时段）
+│   ├── tracker.js         # 价格追踪模块（1h/4h/24h 回报验证 + 场景快照）
+│   ├── learner.js         # 反馈学习引擎（僵尸/权重/过热/时段）
+│   ├── scene.js           # 🆕 场景标签器（5维 priceStage/marketScene/fundingRegime/volumeRegime/oiRegime）
+│   └── memory.js          # 🆕 经验库检索（Jaccard 相似度 + 场景胜率查询）
+│
+├── scripts/               # 🆕 离线工具脚本
+│   ├── backfill-scenes.js # 历史追踪记录补打场景标签
+│   ├── backtest.js        # 按方向/持仓/场景分组的回测报表
+│   └── review.js          # 规则式复盘 (+ LLM 挂点预留)
 │
 ├── api/                   # Vercel Serverless Functions
-│   ├── scan.js            # POST /api/scan 触发扫描
-│   ├── alerts.js          # GET /api/alerts 告警列表
-│   ├── status.js          # GET /api/status 系统状态
-│   ├── latest.js          # GET /api/latest 最新扫描结果
-│   ├── tracking.js        # GET /api/tracking 追踪记录
-│   ├── learning.js        # GET /api/learning 学习参数
-│   ├── cron.js            # Vercel Cron 定时任务
-│   └── _lib/              # Serverless 共享模块
-│       ├── okx-http.js    # OKX REST API + 大盘背景提取
-│       ├── analyzer.js    # 评分引擎 + 回调入场（与 lib 版同步）
-│       ├── store.js       # /tmp 文件缓存 + 大盘缓存
-│       ├── tracker.js     # 价格追踪（Vercel 版）
-│       └── learner.js     # 反馈学习（Vercel 版）
+│   ├── scan.js / alerts.js / status.js / latest.js
+│   ├── tracking.js / learning.js / cron.js
+│   └── _lib/              # Serverless 共享模块（与 lib/ 同步）
+│       ├── okx-http.js analyzer.js store.js tracker.js learner.js
+│       └── scene.js memory.js         # 🆕 用于 Serverless 调用
 │
 ├── data/                  # 本地持久化数据目录
 │   ├── alerts.json        # 告警历史（最多 500 条）
 │   ├── alert-counts.json  # 代币提醒次数追踪
 │   ├── scan-log.json      # 扫描日志（最多 100 条）
-│   ├── tracking.json      # 价格追踪记录
-│   └── learned-params.json # 学习参数（衰减/权重/过热/时段）
+│   ├── tracking.json      # 价格追踪记录（含场景标签）
+│   ├── learned-params.json # 学习参数（衰减/权重/过热/时段）
+│   ├── experience.json    # 🆕 精炼经验库（review.js 产出）
+│   ├── review-report.txt  # 🆕 复盘报告（人读版）
+│   └── backtest-report.txt # 🆕 回测报告
 │
 └── public/
     └── index.html         # Web 仪表盘（暗色主题 SPA，3标签页）
@@ -263,7 +324,9 @@ export OKX_PASSPHRASE="your-passphrase"
 npm start
 ```
 
-访问 **http://localhost:3000** 查看仪表盘。系统启动后 5 秒执行首次扫描，之后每 5 分钟自动扫描。
+访问 **http://localhost:47329** 查看仪表盘。系统启动后 5 秒执行首次扫描，之后每 5 分钟自动扫描；每 2 分钟检查一次 pending 追踪；每 4 小时自动复盘沉淀经验。
+
+> 💡 默认端口由 3000 迁移至 **47329**（冷门高位端口，避免冲突）。自定义请设置环境变量 `PORT`。
 
 ### 2. Vercel 部署
 
@@ -297,6 +360,9 @@ vercel env add OKX_PASSPHRASE production
 | `GET` | `/api/learning` | 学习参数（衰减因子/权重调整/过热模式） |
 | `GET` | `/api/market` | 大盘背景（BTC/ETH 实时行情） |
 | `POST` | `/api/scan` | 手动触发扫描 |
+| `POST` | `/api/review` | 🆕 手动触发一次复盘（支持 `?force=1` 强制重新生成） |
+| `GET` | `/api/experience` | 🆕 查询经验库，支持 `tag`/`stage`/`outcome`/`limit` 过滤 |
+| `GET` | `/api/scheduler` | 🆕 调度器状态（下次扫描/上次复盘/经验总数） |
 
 ### Vercel 模式（Serverless）
 
@@ -308,6 +374,27 @@ vercel env add OKX_PASSPHRASE production
 | `GET` | `/api/tracking` | 追踪记录 |
 | `GET` | `/api/learning` | 学习参数 |
 | `POST` | `/api/scan` | 触发扫描（前端自动轮询调用） |
+
+## 🛠 离线工具脚本
+
+追踪记录补标签、回测、复盘之类的离线操作：
+
+```bash
+# 1）对已有 tracking.json 全量补场景标签 + 分布统计
+node scripts/backfill-scenes.js
+
+# 2）场景化回测 (按价格阶段/费率/OI 分组)
+node scripts/backtest.js > data/backtest-report.txt
+
+# 3）手动复盘 (规则式)
+node scripts/review.js
+
+# 4）手动复盘 (强制重建所有经验)
+node scripts/review.js --force
+
+# 5）启用 LLM 复盘 (需 ANTHROPIC_API_KEY 环境变量)
+node scripts/review.js --llm
+```
 
 ## 🔌 OKX 数据源
 
