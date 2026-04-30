@@ -3,10 +3,16 @@
  * Express Web 服务 + SSE 实时推送 + REST API
  */
 
-// OKX API 凭据 (启动时自动注入环境变量)
-process.env.OKX_API_KEY = process.env.OKX_API_KEY || '69e4a973-37f6-445c-83ac-122b8836efe2';
-process.env.OKX_SECRET_KEY = process.env.OKX_SECRET_KEY || '4134344FFC9BBBF7D1DC97C78D49C7BA';
-process.env.OKX_PASSPHRASE = process.env.OKX_PASSPHRASE || 'XDCjzA5ar@Ytz29';
+// OKX API 凭据 — 仅从 .env / 进程环境变量读取，源码中不再留明文 fallback
+try { require('dotenv').config(); } catch (_) { /* dotenv 可选：Vercel 等平台自带环境变量注入 */ }
+
+const REQUIRED_ENV = ['OKX_API_KEY', 'OKX_SECRET_KEY', 'OKX_PASSPHRASE'];
+const missingEnv = REQUIRED_ENV.filter((k) => !process.env[k]);
+if (missingEnv.length) {
+  console.error('[FATAL] 缺少必需的环境变量:', missingEnv.join(', '));
+  console.error('        请在项目根目录创建 .env 文件，参考 .env.example');
+  process.exit(1);
+}
 
 const express = require('express');
 const path = require('path');
