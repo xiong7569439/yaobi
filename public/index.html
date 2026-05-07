@@ -316,6 +316,7 @@ tr:hover td{background:rgba(59,130,246,.04)}
             <option value="complete">已完成</option>
             <option value="partial">部分完成</option>
             <option value="pending">待追踪</option>
+            <option value="stale">僵尸(查不到价)</option>
           </select>
         </div>
       </div>
@@ -832,10 +833,15 @@ async function fetchTracking() {
 function renderTrackingStats(stats) {
   if (!stats) return;
   const el = document.getElementById('trackingStats');
+  const effective = (stats.total || 0) - (stats.stale || 0);
+  const coverage = effective > 0 ? ((stats.complete || 0) / effective * 100).toFixed(0) + '%' : '--';
   el.innerHTML = `
     <div class="learn-card"><div class="label">总追踪</div><div class="value">${stats.total || 0}</div></div>
-    <div class="learn-card"><div class="label">已完成</div><div class="value">${stats.complete || 0}</div></div>
+    <div class="learn-card"><div class="label">已完成</div><div class="value positive">${stats.complete || 0}</div></div>
+    <div class="learn-card"><div class="label">部分完成</div><div class="value">${stats.partial || 0}</div></div>
     <div class="learn-card"><div class="label">待检查</div><div class="value">${stats.pending || 0}</div></div>
+    <div class="learn-card"><div class="label">僵尸(查不到价)</div><div class="value negative">${stats.stale || 0}</div></div>
+    <div class="learn-card"><div class="label">有效完成率</div><div class="value">${coverage}</div></div>
     <div class="learn-card"><div class="label">平均24h回报</div><div class="value ${stats.avgReturn24h > 0 ? 'positive' : stats.avgReturn24h < 0 ? 'negative' : ''}">${stats.avgReturn24h != null ? stats.avgReturn24h.toFixed(2) + '%' : '--'}</div></div>
   `;
 }
@@ -858,9 +864,10 @@ function renderTracking() {
       const cls = val > 0 ? 'positive' : val < 0 ? 'negative' : 'pending';
       return `<span class="return-badge ${cls}">${label}: ${val > 0 ? '+' : ''}${val.toFixed(2)}%</span>`;
     };
-    const statusLabel = r.status === 'complete' ? '✅' : r.status === 'partial' ? '⏳' : '⌛';
+    const statusLabel = r.status === 'complete' ? '✅' : r.status === 'partial' ? '⏳' : r.status === 'stale' ? '🚫' : '⌛';
+    const staleHint = r.status === 'stale' ? `<div style="font-size:11px;color:var(--negative);margin-top:4px">${r.staleReason || '无法继续追踪'}</div>` : '';
     return `
-      <div class="track-card">
+      <div class="track-card" ${r.status === 'stale' ? 'style="opacity:.55"' : ''}>
         <div class="track-symbol">${statusLabel} ${r.symbol}</div>
         <div style="font-size:12px;color:var(--muted)">评分 ${r.totalScore?.toFixed(1) || '--'} | ${r.direction || '--'} | $${r.p0 ? formatNum(r.p0) : '--'}</div>
         <div class="track-returns">
@@ -868,6 +875,7 @@ function renderTracking() {
           ${rb(r.return4h, '4h')}
           ${rb(r.return24h, '24h')}
         </div>
+        ${staleHint}
         <div style="font-size:11px;color:var(--muted)">${timeAgo(r.alertTime)}</div>
       </div>
     `;

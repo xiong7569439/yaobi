@@ -20,6 +20,27 @@
 const learner = require('./learner');
 const sceneLib = require('./scene');
 const memory = require('./memory');
+const okxFetcher = require('./okx-fetcher');
+
+/**
+ * 构建加密货币白名单 (OKX spot 可交易的基础币种)
+ * 用于过滤掉新闻/情绪数据里混入的美股代码(COIN/MSTR/AMD等)
+ * 返回 null 表示临时拿不到名单(启动初期), 此时不过滤
+ */
+function buildSpotWhitelist() {
+  try {
+    const tickers = okxFetcher.getSpotTickers();
+    if (!Array.isArray(tickers) || tickers.length === 0) return null;
+    const set = new Set();
+    for (const t of tickers) {
+      const base = (t.instId || '').split('-')[0];
+      if (base) set.add(base);
+    }
+    return set.size > 0 ? set : null;
+  } catch (_) {
+    return null;
+  }
+}
 
 const WEIGHTS = {
   newsHeat:     0.15,
@@ -504,17 +525,32 @@ function analyze(okxData) {
   }
 
   // Step 7: 为每个候选代币评分
+  const spotWhitelist = buildSpotWhitelist();
+  if (spotWhitelist) {
+    console.log(`[Analyzer] 加密货币白名单: ${spotWhitelist.size} 个基础币种`);
+  } else {
+    console.warn('[Analyzer] OKX spot 白名单为空, 本轮不过滤非加密资产');
+  }
   const results = [];
+  let rejectedNonCrypto = 0;
   for (const [, tokenData] of tokenMap) {
     // 过滤主流币、稳定币、无效符号
     const sym = tokenData.symbol || '';
     if (MAINSTREAM_COINS.has(sym)) continue;
     if (sym.length < 2 || sym.length > 15) continue;
     if (sym.includes(' ') || sym.includes("'")) continue; // 过滤非代币符号
+    // 硬过滤: 必须在 OKX spot 白名单中 (排除美股/基金代码)
+    if (spotWhitelist && !spotWhitelist.has(sym)) {
+      rejectedNonCrypto++;
+      continue;
+    }
     const result = analyzeToken(tokenData, marketContext);
     if (result.totalScore > 0) {
       results.push(result);
     }
+  }
+  if (rejectedNonCrypto > 0) {
+    console.log(`[Analyzer] 拒绝 ${rejectedNonCrypto} 个非加密资产符号(来自新闻/情绪数据)`);
   }
 
   // 按分数排序
