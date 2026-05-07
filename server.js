@@ -188,6 +188,17 @@ app.get('/api/scheduler', (req, res) => {
   });
 });
 
+// 历史回测报表 (按方向/时间窗/场景分层统计)
+app.get('/api/backtest', (req, res) => {
+  try {
+    const { generateBacktest } = require('./scripts/backtest-stats');
+    const report = generateBacktest();
+    res.json({ ok: true, data: report });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
+  }
+});
+
 // ============ 启动 ============
 
 app.listen(PORT, () => {

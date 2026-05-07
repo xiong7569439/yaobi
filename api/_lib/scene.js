@@ -87,6 +87,35 @@ function classifyOiRegime(oiChangePct) {
 }
 
 /**
+ * 聪明钱先动探测 (Smart Money Early)
+ *
+ * 核心逻辑: 在价格还没走出来时, OI 已经惄惄建仓 + 成交量温和放大 + 费率未拥挤
+ * 这等于在说“有人在离经据仓但未拉盘”, 是埋伏期最黄金的开仓 setup
+ *
+ * 四项必须同时成立:
+ *   1) 价格安静: |24h涨跌| < 5%
+ *   2) OI 建仓: oiChangePct ∈ [10%, 40%) —— 低于10%说明没人动, 高于40%已经是拉盘
+ *   3) 成交量温暖: volumeMultiplier ∈ [1.5, 5) —— 不能是爆量, 正如足够引注意即可
+ *   4) 费率未异常: fundingRate ∈ (-0.02%, 0.02%) —— 无多空拥挤
+ *
+ * @param {Object} input - {change24hPct, fundingRate, oiChangePct, volumeMultiplier}
+ * @returns {boolean}
+ */
+function detectSmartMoneyEarly(input = {}) {
+  const c = Math.abs(input.change24hPct || 0);
+  const o = input.oiChangePct || 0;
+  const v = input.volumeMultiplier || 1;
+  const f = input.fundingRate || 0;
+
+  const priceQuiet = c < 5;
+  const oiBuilding = o >= 10 && o < 40;
+  const volWarmingUp = v >= 1.5 && v < 5;
+  const fundingNormal = f > -0.0002 && f < 0.0002;
+
+  return priceQuiet && oiBuilding && volWarmingUp && fundingNormal;
+}
+
+/**
  * 一次性给一条告警快照打全套标签
  * @param {Object} input - {change24hPct, fundingRate, oiChangePct, volumeMultiplier, marketContext}
  * @returns {Object} { priceStage, marketScene, fundingRegime, volumeRegime, oiRegime, sceneKey }
@@ -97,6 +126,7 @@ function tagSnapshot(input = {}) {
   const fundingRegime = classifyFundingRegime(input.fundingRate);
   const volumeRegime = classifyVolumeRegime(input.volumeMultiplier);
   const oiRegime = classifyOiRegime(input.oiChangePct);
+  const smartMoneyEarly = detectSmartMoneyEarly(input);
 
   // 场景键 - 用于后续经验库相似度检索 (粗粒度组合)
   const sceneKey = `${marketScene}|${priceStage}|${fundingRegime}|${oiRegime}`;
@@ -107,6 +137,7 @@ function tagSnapshot(input = {}) {
     fundingRegime,
     volumeRegime,
     oiRegime,
+    smartMoneyEarly,
     sceneKey,
   };
 }
@@ -154,6 +185,7 @@ module.exports = {
   classifyFundingRegime,
   classifyVolumeRegime,
   classifyOiRegime,
+  detectSmartMoneyEarly,
   tagSnapshot,
   sceneSimilarity,
   labelCn,

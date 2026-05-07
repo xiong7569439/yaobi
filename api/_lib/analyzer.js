@@ -267,6 +267,22 @@ function analyzeToken(tokenData, marketContext = null) {
       dirReasons.length = 0;
       dirReasons.push('启动期+费率极高 不碰');
       reasons.push('P0拦截:拥挤');
+    } else if (snapshotScene.priceStage === 'ambush') {
+      // 埋伏期 (|24h| < 5%) —— 回测显示 ambush+long 胜率仅 23.8%
+      // 唯一例外: "聪明钱先动" (OI 建仓 + 温和放量 + 费率正常 + 价格未走)
+      if (snapshotScene.smartMoneyEarly) {
+        // 这是真正的黄金埋伏 —— 加分而不是禁止
+        directionScore = Math.min(100, Math.round(directionScore * 1.25));
+        dirReasons.unshift('聪明钱先动-价格未跟');
+        reasons.push('P0增强:聪明钱埋伏');
+      } else {
+        // 无聪明钱信号的埋伏期→转 neutral (历史胜率仅 23.8%)
+        direction = 'neutral';
+        directionScore = Math.max(20, Math.round(directionScore * 0.5));
+        dirReasons.length = 0;
+        dirReasons.push('埋伏期胜率23.8% 禁盲目做long');
+        reasons.push('P0拦截:埋伏期无聪明钱');
+      }
     }
   }
 

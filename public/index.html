@@ -230,6 +230,7 @@ tr:hover td{background:rgba(59,130,246,.04)}
     <div class="tab active" onclick="switchTab('alerts')">🔥 妖币告警</div>
     <div class="tab" onclick="switchTab('tracking')">📊 告警验证</div>
     <div class="tab" onclick="switchTab('learning')">🧠 系统学习</div>
+    <div class="tab" onclick="switchTab('backtest')">🧪 历史回测</div>
   </div>
 
   <!-- Tab: Alerts -->
@@ -364,6 +365,37 @@ tr:hover td{background:rgba(59,130,246,.04)}
       <div id="overheatInfo">
         <div class="empty-state" style="padding:20px">暂未识别到过热模式</div>
       </div>
+    </div>
+  </div>
+
+  <!-- Tab: Backtest -->
+  <div class="tab-content" id="tab-backtest">
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">🧪 历史告警回测</div>
+        <button class="btn" onclick="fetchBacktest()">🔄 刷新</button>
+      </div>
+      <div id="backtestSummary" class="learn-grid"></div>
+    </div>
+    <div class="section">
+      <div class="section-header"><div class="section-title">📏 方向 × 时间窗胜率</div></div>
+      <div class="table-wrap">
+        <table id="backtestByDir"><thead><tr><th>方向</th><th>窗口</th><th>样本</th><th>胜率</th><th>均值</th><th>最大赢</th><th>最大亏</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-header"><div class="section-title">🎭 场景(priceStage) × 方向 胜率 (24h 口径)</div></div>
+      <div class="table-wrap">
+        <table id="backtestByStage"><thead><tr><th>价格阶段</th><th>方向</th><th>样本</th><th>胜率</th><th>均值</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-header"><div class="section-title">⭐ 聪明钱先动信号 专项 (long 方向, 24h)</div></div>
+      <div id="backtestSmartMoney" style="padding:12px"></div>
+    </div>
+    <div class="section">
+      <div class="section-header"><div class="section-title">📚 精炼经验库摘要</div></div>
+      <div id="backtestExperience" style="padding:12px"></div>
     </div>
   </div>
 
@@ -781,6 +813,7 @@ function switchTab(tabName) {
   document.getElementById('tab-' + tabName).classList.add('active');
   if (tabName === 'tracking') fetchTracking();
   if (tabName === 'learning') fetchLearning();
+  if (tabName === 'backtest') fetchBacktest();
 }
 
 // ===== Tracking =====
@@ -947,6 +980,104 @@ function renderLearning() {
         <div style="margin-top:8px;font-size:12px;color:var(--muted)">当代币同时满足以上条件时，系统会自动增加做空信号分数</div>
       </div>
     `;
+  }
+}
+
+// ===== Backtest =====
+async function fetchBacktest() {
+  try {
+    const res = await fetch('/api/backtest');
+    const json = await res.json();
+    if (json.ok) renderBacktest(json.data);
+  } catch (e) {
+    console.error('fetchBacktest failed', e);
+  }
+}
+
+function renderBacktest(d) {
+  if (!d) return;
+  const fmt = (n, suffix = '') => n == null ? '--' : n + suffix;
+  const pctColor = v => v > 0 ? 'positive' : v < 0 ? 'negative' : '';
+
+  // 摘要卡片
+  const sm = d.summary || {};
+  document.getElementById('backtestSummary').innerHTML = `
+    <div class="learn-card"><div class="label">追踪总量</div><div class="value">${sm.total || 0}</div></div>
+    <div class="learn-card"><div class="label">24h完整样本</div><div class="value">${sm.with24hComplete || 0}</div></div>
+    <div class="learn-card"><div class="label">待检查</div><div class="value">${sm.pending || 0}</div></div>
+  `;
+
+  // 方向 × 时间窗
+  const dirTbody = document.querySelector('#backtestByDir tbody');
+  dirTbody.innerHTML = '';
+  const windowMap = { return1h: '1h', return4h: '4h', return24h: '24h' };
+  for (const [dir, windows] of Object.entries(d.byDirection || {})) {
+    for (const [w, s] of Object.entries(windows)) {
+      if (!s) continue;
+      dirTbody.insertAdjacentHTML('beforeend', `<tr>
+        <td>${dir}</td><td>${windowMap[w]}</td><td>${s.n}</td>
+        <td><strong>${s.winRate}%</strong></td>
+        <td class="${pctColor(s.avg)}">${s.avg > 0 ? '+' : ''}${s.avg}%</td>
+        <td class="positive">+${s.max}%</td>
+        <td class="negative">${s.min}%</td>
+      </tr>`);
+    }
+  }
+
+  // 场景 × 方向
+  const stageTbody = document.querySelector('#backtestByStage tbody');
+  stageTbody.innerHTML = '';
+  const stageCn = { ambush:'埋伏', pullback:'回调', ignition:'启动', rally:'上涨中', tail:'尾部', blowoff:'暴涨尾声', crash:'暴跌' };
+  for (const [stage, dirs] of Object.entries(d.byStage || {})) {
+    for (const [dir, s] of Object.entries(dirs)) {
+      if (!s || s.n < 2) continue;
+      const hi = s.winRate >= 70 ? 'style="background:rgba(16,185,129,.08)"' : (s.winRate <= 30 ? 'style="background:rgba(239,68,68,.08)"' : '');
+      stageTbody.insertAdjacentHTML('beforeend', `<tr ${hi}>
+        <td>${stageCn[stage] || stage} (${stage})</td><td>${dir}</td>
+        <td>${s.n}</td><td><strong>${s.winRate}%</strong></td>
+        <td class="${pctColor(s.avg)}">${s.avg > 0 ? '+' : ''}${s.avg}%</td>
+      </tr>`);
+    }
+  }
+
+  // 聪明钱
+  const smEl = document.getElementById('backtestSmartMoney');
+  const ws = d.smartMoney?.withSignal;
+  const wos = d.smartMoney?.withoutSignal;
+  smEl.innerHTML = `
+    <div style="display:flex;gap:16px;flex-wrap:wrap">
+      <div class="card" style="flex:1;min-width:220px;border-color:var(--green)">
+        <div class="card-title">⭐ 有聪明钱信号 (黄金 setup)</div>
+        <div class="card-value ${ws ? pctColor(ws.avg) : ''}">${ws ? ws.winRate + '%' : '样本不足'}</div>
+        <div class="card-sub">${ws ? `样本 ${ws.n} 均值 ${ws.avg > 0 ? '+' : ''}${ws.avg}%` : '需累积更多数据'}</div>
+      </div>
+      <div class="card" style="flex:1;min-width:220px;border-color:var(--red)">
+        <div class="card-title">⛔ 无聪明钱(埋伏期)</div>
+        <div class="card-value ${wos ? pctColor(wos.avg) : ''}">${wos ? wos.winRate + '%' : '--'}</div>
+        <div class="card-sub">${wos ? `样本 ${wos.n} 均值 ${wos.avg > 0 ? '+' : ''}${wos.avg}%` : ''}</div>
+      </div>
+    </div>
+    <div style="margin-top:12px;font-size:12px;color:var(--muted)">P0 规则: 埋伏期仅当聪明钱信号存在时才保留 long, 否则转 neutral</div>
+  `;
+
+  // 经验库
+  const ex = d.experienceSummary;
+  const exEl = document.getElementById('backtestExperience');
+  if (ex) {
+    exEl.innerHTML = `
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
+        <div><strong>总条数:</strong> ${ex.total}</div>
+        <div><strong>胜:</strong> <span class="positive">${ex.wins}</span></div>
+        <div><strong>负:</strong> <span class="negative">${ex.losses}</span></div>
+        <div><strong>胜率:</strong> ${ex.winRate}%</div>
+      </div>
+      <div style="margin-top:10px"><strong>高频归因标签:</strong></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+        ${(ex.topTags || []).map(([k, v]) => `<span class="reason-tag">${k} × ${v}</span>`).join('')}
+      </div>
+    `;
+  } else {
+    exEl.innerHTML = '<div class="empty-state" style="padding:20px">暂无经验数据</div>';
   }
 }
 </script>
